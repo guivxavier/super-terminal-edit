@@ -1,0 +1,2 @@
+# LF everywhere: the WSL zshrc and the .sh files break with CRLF; pwsh reads LF without trouble
+* text=auto eol=lf

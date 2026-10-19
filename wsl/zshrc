@@ -1,0 +1,279 @@
+# zsh no WSL - mesmo visual do PowerShell do Windows
+export PATH="$HOME/.local/bin:$PATH"
+# o WSL junta ao PATH todas as pastas do Windows; percorre-las via /mnt/c e lento (arranque e realce de sintaxe)
+# -> fica so o essencial do Windows (cmd/explorer/code)
+path=(${path:#/mnt/c/*} /mnt/c/Windows/System32 /mnt/c/Windows "$WINHOME/AppData/Local/Programs/Microsoft VS Code/bin")
+HISTFILE=~/.zsh_history HISTSIZE=50000 SAVEHIST=50000
+setopt share_history hist_ignore_all_dups hist_ignore_space prompt_subst auto_cd
+autoload -Uz compinit && compinit -C        # -C: sem verificar a cache -> arranque rapido
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+
+# prompt (igual ao do PowerShell): wsl [root] kvn@host pasta/ [git: branch* ↑n ↓n] [✘ codigo] [duracao]
+zmodload zsh/datetime zsh/stat 2>/dev/null
+__git_info() {
+    local d=$PWD
+    while [[ -n $d ]]; do
+        if [[ -e $d/.git ]]; then
+            # pastas do Windows (/mnt/...): o git do Linux demora ~3 s por la (9P); o git.exe do Windows ~0,15 s
+            local -a st
+            if [[ $d == /mnt/* && -x '/mnt/c/Program Files/Git/cmd/git.exe' ]]; then st=("${(@f)$('/mnt/c/Program Files/Git/cmd/git.exe' -C "$(wslpath -w $d)" status --porcelain=v2 --branch 2>/dev/null | tr -d '\r')}")
+            else st=("${(@f)$(git -C $d status --porcelain=v2 --branch 2>/dev/null)}"); fi
+            local br=${${(M)st:#\# branch.head *}#\# branch.head } ab=${${(M)st:#\# branch.ab *}#\# branch.ab } up=''
+            [[ $br == '(detached)' ]] && br=${${${(M)st:#\# branch.oid *}#\# branch.oid }[1,7]}
+            local dirty=${#${st:#\#*}}
+            if [[ $ab =~ '\+([0-9]+) -([0-9]+)' ]]; then (( match[1] )) && up+=" ↑$match[1]"; (( match[2] )) && up+=" ↓$match[2]"; fi
+            [[ -n $br ]] && print -n " %F{8}${br}$( (( dirty )) && print -n '%F{yellow}*')%F{cyan}${up}"
+            return
+        fi
+        d=${d%/*}
+    done
+}
+__pwd_seg() { local p=${PWD/#$HOME/\~}; [[ $p != '~' && $p != */ ]] && p+=/; print -rn -- ${p//\%/%%} }
+# ultimo comando: falhou (✘ + codigo) e quanto demorou (>= 2 s); so logo a seguir a ele (Enter vazio nao repete)
+__cmd_seg='' __t0=''
+__prompt_pre() {
+    local st=$?
+    __cmd_seg=''
+    if [[ -n $__t0 ]]; then
+        (( st )) && __cmd_seg+="%F{red} $st "
+        local -i s=$(( EPOCHREALTIME - __t0 ))
+        (( s >= 2 )) && __cmd_seg+="%F{yellow}$( (( s >= 60 )) && printf '%dm%ds' $((s / 60)) $((s % 60)) || printf '%ds' $s) "
+        __t0=''
+    fi
+}
+__prompt_exec() { __t0=$EPOCHREALTIME }
+autoload -Uz add-zsh-hook; add-zsh-hook precmd __prompt_pre; add-zsh-hook preexec __prompt_exec
+PROMPT='%B%F{green}%f%b %B%F{green}wsl%f%b %(!.%B%F{red}root%f%b .)%F{magenta}%n%F{8}@%F{blue}%m %F{cyan}$(__pwd_seg)$(__git_info) ${__cmd_seg}%f'
+
+# ---- fastfetch + caixa "commands" + cabecalho fixo (igual ao PowerShell do Windows) ----
+# cabecalho fixo: depois do fastfetch, a regiao de scroll (DECSTBM) comeca abaixo da linha separadora; re-afirmada
+# em cada prompt. Programas de ecra inteiro correm com o ecra todo (__ff_free antes).
+typeset -g FF_TOP=
+__ff_free() { print -n '\e7\e[r\e8' }
+__cursor_row() { local pos; print -n '\e[6n' > /dev/tty; read -rs -d R pos < /dev/tty; pos=${pos#*\[}; print -r -- ${pos%%;*} }
+__other_pc() { [[ ${HOST:l} == desktop* ]] && print laptop || print desktop }
+__show_cheats() {
+    (( COLUMNS >= 162 )) || return
+    local o=$(__other_pc) e=$'\e' r=1 out=$'\e7' dot=$'\e[90m · \e[36m' line
+    local -a rows=("${e}[1;35m"$''"  commands ${e}[0;90m${(l:44::─:)}${e}[0m" '')
+    # compacto: um grupo por linha, so os comandos
+    __cheat_group() { rows+=("  ${e}[${1}m${2}  ${(r:7:)3}${e}[36m${4// . /$dot}${e}[0m") }   # cor icone nome 'cmd . cmd'
+    __cheat_group 33 $'' apps 'app . app add . app ren'
+    __cheat_group 31 $'' media 'yt . st'
+    __cheat_group 34 $'' pcs "ssh $o . get . send . rls${${o:#laptop}:+ . wake . suspend}"
+    __cheat_group 32 $'' files 'ls . la . ll . z . cpwd . view . fetch'
+    __cheat_group 36 $'' win '~ws . ~desk . ~dl . ~docs . ~win'
+    __cheat_group 35 $'' shell 'ff . ffw . exit'
+    rows+=('' "  ${e}[37m"$''"  keys   ${e}[48;5;238;97m ^T ${e}[0;90m tab  ${e}[48;5;238;97m ^D ${e}[0;90m split  ${e}[48;5;238;97m ^R ${e}[0;90m history  ${e}[48;5;238;97m ^L ${e}[0;90m clear  ${e}[0m")
+    for line in "${rows[@]}"; do out+="${e}[${r};100H${line}"; (( r++ )); done
+    print -n -- "${out}${e}8"
+}
+ff() {
+    # o fastfetch so aparece no cabecalho do WezTerm: no WSL (VS Code, wsl direto, ssh) o ff / clear / Ctrl+L so limpam
+    # (o fastfetch continua a mao: fastfetch)
+    __ff_free; FF_TOP=; command clear
+}
+ffw() { __ff_free; clear; fastfetch --watch "$@" }
+alias clear=ff cls=ff
+
+# ---- comandos do Windows (yt, st, get, send, rls, ssh desktop/laptop, wake, suspend, app) ----
+# correm no PowerShell do Windows, com o perfil em modo so-comandos (KVN_CMD=1: carrega as funcoes, sem fastfetch)
+# (os programas do Windows lancados daqui nao tem consola propria: so texto; COLUMNS diz-lhes a largura)
+win() { local c=$1; shift; __ff_free; KVN_CMD=1 COLUMNS=$COLUMNS WSLENV="KVN_CMD:COLUMNS:$WSLENV" '/mnt/c/Program Files/PowerShell/7/pwsh.exe' -NoLogo -Command "$c ${(j: :)${(qq)@}}" }
+# view do Windows: md/imagens aqui mesmo; pdf num separador novo (precisa de teclado, que daqui o pwsh nao tem)
+view() {
+    [[ -e $1 ]] || { print -P "%F{yellow}!%f '$1' doesn't exist"; return 1 }
+    local p=$(wslpath -w "${1:A}")
+    if [[ ${1:l} == *.pdf ]]; then __wt -w 0 nt --title view 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\view.ps1" "$p"
+    else KVN_CMD=1 COLUMNS=$COLUMNS LINES=$LINES WSLENV="KVN_CMD:COLUMNS:LINES:$WSLENV" '/mnt/c/Program Files/PowerShell/7/pwsh.exe' -NoLogo -NoProfile -File "$(wslpath -w $WINHOME)\\.config\\view.ps1" "$p"; fi
+}
+for __c in get send rls wake suspend app; do eval "$__c() { win $__c \"\$@\" }"; done; unset __c
+# yt / st precisam de teclado e imagens a serio: abrem num separador novo do Windows Terminal
+__wt() { local w; for w in "$WINHOME/AppData/Local/Microsoft/WindowsApps/wt.exe" "$WINHOME/.local/terminal/wt.exe"; do [[ -e $w ]] && { "$w" "$@"; return }; done; print -P '%F{yellow}!%f Windows Terminal not found' }
+yt() { __wt -w 0 nt --title yt 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\yt-tui.ps1" "$@" }
+st() { __wt -w 0 nt --title st 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\st-tui.ps1" "$@" }
+# ssh desktop / ssh laptop com o ssh.exe do Windows (usa as chaves e o ssh-agent do Windows; a do laptop tem passphrase)
+ssh() { if (( $# == 1 )) && [[ $1 == (desktop|laptop) ]]; then __ff_free; /mnt/c/Windows/System32/OpenSSH/ssh.exe -t $1 'pwsh -NoLogo'; ff; else command ssh "$@"; fi }
+cpwd() { local p=${1:+${1:A}}; p=${p:-$PWD}; print -rn -- $p | clip.exe; print -P "  %F{green}✓%f copied  %F{8}$p%f" }
+
+# ---- ls igual ao rls: PC + caminho + total, depois icone, nome, tamanho, data (ll / lt continuam no eza) ----
+zmodload -F zsh/stat b:zstat
+__icon() {   # $1 nome  $2 1=pasta
+    if (( $2 )); then print -rn -- $'\e[34m'; return; fi
+    case ${${1:e}:l} in
+        jpg|jpeg|png|gif|webp|avif|heic|bmp|svg|ico) print -rn -- $'\e[35m' ;;
+        mp4|mkv|avi|mov|webm|m4v|wmv) print -rn -- $'\e[31m' ;;
+        mp3|wav|flac|m4a|ogg|aac|flp|mid) print -rn -- $'\e[36m' ;;
+        zip|rar|7z|tar|gz|xz|iso) print -rn -- $'\e[33m' ;;
+        pdf) print -rn -- $'\e[31m' ;;
+        exe|msi|bat|cmd|lnk|sh) print -rn -- $'\e[32m' ;;
+        ps1|py|js|ts|json|cs|cpp|c|h|lua|html|css|xml|yml|yaml|zsh) print -rn -- $'\e[33m' ;;
+        txt|md|doc|docx|odt|rtf|log|csv|xls|xlsx) print -rn -- $'\e[37m' ;;
+        *) print -rn -- $'\e[37m' ;;
+    esac
+}
+__size() { local b=$1; if (( b >= 1073741824 )); then printf '%.1f GB' $(( b / 1073741824.0 )); elif (( b >= 1048576 )); then printf '%.1f MB' $(( b / 1048576.0 )); elif (( b >= 1024 )); then printf '%d KB' $(( b / 1024 )); else printf '%d B' $b; fi }
+ls() {
+    local all=0 d
+    [[ $1 == -a ]] && { all=1; shift; }
+    d=${1:-.}; [[ -d $d ]] || { print -P "%F{yellow}!%f %F{15}'$d' doesn't exist%f"; return 1; }
+    local -a dirs files
+    if (( all )); then dirs=($d/*(ND/:t)); files=($d/*(ND^/:t)); else dirs=($d/*(N/:t)); files=($d/*(N^/:t)); fi
+    local nw=$(( COLUMNS - 40 )); (( nw > 56 )) && nw=56; (( nw < 20 )) && nw=20
+    local tot=0 f s m n; local -a lines
+    for f in $dirs; do zstat -F '%d/%m/%y %H:%M' -A m +mtime -- $d/$f; n=$f; (( ${#n} > nw )) && n="${n[1,nw-1]}…"; lines+=("  $(__icon $f 1)\e[0m  \e[1;34m${(r:nw:)n}\e[0m  \e[36m         \e[0m  \e[90m$m\e[0m"); done
+    for f in $files; do zstat -A s +size -- $d/$f 2>/dev/null || s=0; zstat -F '%d/%m/%y %H:%M' -A m +mtime -- $d/$f 2>/dev/null; (( tot += s )); n=$f; (( ${#n} > nw )) && n="${n[1,nw-1]}…"; lines+=("  $(__icon $f 0)\e[0m  \e[97m${(r:nw:)n}\e[0m  \e[36m${(l:9:)$(__size $s)}\e[0m  \e[90m$m\e[0m"); done
+    local ic=$''; [[ ${HOST:l} == desktop* ]] && ic=$''
+    print
+    print -- "  \e[1;97m$ic  wsl ${HOST:l}\e[0m  \e[37m${d:A}\e[0m   \e[90m$(( ${#dirs} + ${#files} )) items$( (( tot )) && print -n "  ·  $(__size $tot)")\e[0m"
+    print -- "  \e[90m${(l:nw+30::─:)}\e[0m"
+    (( ${#lines} )) && print -l -- $lines || print -- '  \e[90m(empty)\e[0m'
+    print
+}
+alias la='ls -a'
+(( $+commands[eza] )) && { alias ll='eza -la --icons --group-directories-first --git'; alias lt='eza --tree --level=2 --icons'; }
+(( $+commands[bat] )) && alias cat='bat --paging=never'
+(( $+commands[zoxide] )) && eval "$(zoxide init zsh)"
+
+# pastas do Windows: ~win ~desk ~dl ~docs ~ws (ex.: cd ~ws/KILN; o Tab completa a partir dai)
+hash -d win=$WINHOME dl=$WINHOME/Downloads docs=$WINHOME/Documents
+if [[ -d '/mnt/c/Ambiente de Trabalho' ]]; then hash -d desk='/mnt/c/Ambiente de Trabalho'; else hash -d desk=$WINHOME/Desktop; fi
+[[ -d ~desk/WORKSPACE ]] && hash -d ws=~desk/WORKSPACE
+# cd aceita caminhos do Windows colados: cd 'C:\Ambiente de Trabalho\KILN' (com aspas) ou cd C:/x/y
+cd() { if (( $# == 1 )) && [[ $1 == [A-Za-z]:[\\/]* ]]; then builtin cd "$(wslpath -u "$1")"; else builtin cd "$@"; fi }
+# o z tambem conhece as pastas que usas no Windows: importa o historico do zoxide do Windows (1x por dia, em segundo plano)
+(( $+commands[zoxide] )) && () {
+    local s=~/.cache/zoxide-win-seed z; local -a old=($s(Nmh+24))
+    [[ -e $s && -z $old ]] && return
+    for z in $WINHOME/AppData/Local/Microsoft/WinGet/Links/zoxide.exe $WINHOME/.local/bin/zoxide.exe; do [[ -e $z ]] && break; z=; done
+    [[ -n $z ]] || return
+    { "$z" query -l 2>/dev/null | tr -d '\r' | while IFS= read -r p; do local u=$(wslpath -u "$p" 2>/dev/null); [[ -d $u ]] && zoxide add -- "$u"; done; mkdir -p ~/.cache; touch $s } &!
+}
+
+# realce de sintaxe (sem as sugestoes cinzentas do historico: desligadas, como no PowerShell)
+source ~/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+# tema One Dark (igual ao Windows): fzf e bat
+export FZF_DEFAULT_OPTS='--color=fg:#abb2bf,bg:-1,hl:#61afef,fg+:#ffffff,bg+:#3e4451,hl+:#61afef,info:#98c379,prompt:#56b6c2,pointer:#e06c75,marker:#e5c07b,spinner:#c678dd,header:#5c6370,border:#4b5263,gutter:-1,query:#abb2bf'
+export BAT_THEME=OneHalfDark
+# editor: micro (o mesmo do Windows, com a mesma config); nano -> micro
+export EDITOR=micro VISUAL=micro MICRO_TRUECOLOR=1 MICRO_CONFIG_HOME=$WINHOME/.config/micro
+alias nano=micro
+
+# fetch <texto> [pasta]: procura o texto dentro dos ficheiros (rg), pre-visualizacao (bat) no fzf; Enter abre no VS Code
+fetch() {
+    local bat=${commands[batcat]:-${commands[bat]}}
+    if (( ! $+commands[rg] || ! $+commands[fzf] )) || [[ -z $bat ]]; then
+        print -P "%F{yellow}!%f fetch needs ripgrep, fzf and bat on Linux:  %F{8}sudo apt install -y ripgrep fzf bat%f"; return 1
+    fi
+    [[ -n $1 ]] || { print -P '%F{8}usage: fetch <text> [folder]%f'; return 1 }
+    local pick=$(rg --line-number --column --no-heading --color=always --smart-case -- "$1" "${2:-.}" |
+        fzf --ansi --height 70% --reverse --delimiter : --prompt "fetch $1> " --header 'enter opens in VS Code' \
+            --preview "$bat --color=always --style=numbers --highlight-line {2} {1}" --preview-window 'right,60%,+{2}-8')
+    [[ -n $pick ]] || return
+    pick=$(print -r -- $pick | sed 's/\x1b\[[0-9;]*m//g')
+    local -a f=("${(@s/:/)pick}")
+    code -g "${f[1]:A}:${f[2]}:${f[3]}"
+}
+
+# Ctrl+Backspace em cd/ls/y: tira a ultima pasta do caminho (cd a/b/ -> cd a/); noutra linha apaga a palavra
+__ctrl_bs() {
+    if [[ $LBUFFER =~ '^([[:space:]]*(cd|ls|ll|la|y)[[:space:]]+)(.+)$' ]]; then
+        local pre=$match[1] w=${match[3]%/}
+        [[ $w == */* ]] && LBUFFER="$pre${w%/*}/" || LBUFFER=$pre
+    else zle backward-kill-word; fi
+}
+
+# Ctrl+Espaco em cd/ls/y: lista de pastas no estilo do ls (icone, nome, data) numa caixa por baixo do prompt, igual
+# ao PowerShell. Fica aberta enquanto se escreve: Tab entra na pasta, escrever filtra, Backspace apaga, Ctrl+Backspace
+# sobe, Enter escreve e corre; fecha sem mais pastas, com Esc, Ctrl+Espaco ou Ctrl+C. Noutra linha: menu normal do zsh.
+# Molduras e colunas por posicao absoluta (ESC[<col>G): a largura dos icones varia com a fonte.
+__cursor_pos() { local p; print -n '\e[6n' > /dev/tty; read -rs -d R p < /dev/tty; print -r -- ${p#*\[} }   # "linha;coluna"
+__dir_menu() {
+    emulate -L zsh -o extendedglob -o nullglob
+    if [[ $LBUFFER != [[:space:]]#(cd|ls|ll|la|y)[[:space:]]* ]]; then zle expand-or-complete; return; fi
+    local e=$'\e' bc=$'\e[38;2;75;82;99m' sel=1 off=0 last='' key rest pre wo wx po base dir n d row col p
+    local -a dirs names rights h1 h2
+    local k j nm pat o W H x0=3 maxn host=${HOST:l} cnt bw x1 vis need hl keys
+    local pcic=$''; [[ ${HOST:l} == desktop* ]] && pcic=$''
+    # (desenha por posicao absoluta: linha/coluna do cursor perguntadas ao terminal; no fim o cursor volta ao sitio)
+    __dm_clear() { print -rn -- "${e}[$(( row + 1 ));1H${e}[J${e}[${row};${col}H${e}[?25h" > /dev/tty }
+    TRAPINT() { __dm_clear; LBUFFER=''; zle reset-prompt; return 130 }
+    while true; do
+        if [[ $LBUFFER != $last ]]; then
+            last=$LBUFFER
+            [[ $LBUFFER =~ '^([[:space:]]*(cd|ls|ll|la|y)[[:space:]]+)(.*)$' ]] || break
+            pre=$match[1]; wo=${(Q)match[3]}                     # o que se escreveu, sem aspas / barras de escape
+            wx=${wo/#\~/$HOME}
+            if [[ $wx == */* ]]; then po=${wo%/*}/; base=${wx%/*}/; n=${wx##*/}; else po=''; base=./; n=$wx; fi
+            pat=${(b)n}; h1=(); h2=()
+            if [[ $n == .* ]]; then h1=( ${base}(#i)${~pat}*(N/D) ); h2=( ${base}(#i)*${~pat}*(N/D) )
+            else h1=( ${base}(#i)${~pat}*(N/) ); h2=( ${base}(#i)*${~pat}*(N/) ); fi
+            dirs=( $h1 ${h2:|h1} )
+            (( $#dirs )) || break                                 # sem mais pastas
+            names=(); rights=()
+            for d in $dirs; do names+=${d:t}; rights+=$(zstat -F '%d/%m/%y %H:%M' +mtime -- $d 2>/dev/null); done
+            dir=${${base:A}/#$HOME/\~}; [[ $dir != */ ]] && dir+=/
+            sel=1; off=0
+        fi
+        W=$COLUMNS; H=$LINES; maxn=0; cnt="$#dirs folder$( (( $#dirs != 1 )) && print -n s)"
+        for n in $names; do (( ${#n} > maxn )) && maxn=${#n}; done
+        bw=$(( maxn + 26 )); (( bw < 58 )) && bw=58
+        (( bw < ${#host} + ${#dir} + ${#cnt} + 18 )) && bw=$(( ${#host} + ${#dir} + ${#cnt} + 18 )); (( bw > W - 4 )) && bw=$(( W - 4 ))
+        x1=$(( x0 + bw - 1 )); vis=$(( $#dirs < 12 ? $#dirs : 12 )); (( vis > H - 8 )) && vis=$(( H - 8 )); (( vis < 1 )) && vis=1
+        (( sel - 1 < off )) && off=$(( sel - 1 )); (( sel - 1 >= off + vis )) && off=$(( sel - vis ))
+        need=$(( vis + 2 )); hl=${(l:$(( bw - 2 ))::─:)}
+        # onde esta o cursor; se nao houver espaco por baixo, o ecra sobe (e o prompt com ele)
+        p=$(__cursor_pos); row=${p%;*}; col=${p#*;}
+        if (( H - row < need )); then print -rn -- "${e}[${H};1H${(pl:$(( need - (H - row) ))::\n:)}" > /dev/tty; row=$(( H - need )); fi
+        o="${e}[?25l${e}[$(( row + 1 ));1H${e}[J"
+        o+="${e}[$(( row + 1 ));${x0}H${bc}╭${hl}╮${e}[$(( row + 1 ));$(( x0 + 2 ))H ${e}[1;97m${pcic}  ${host}${e}[0;37m  ${dir}${e}[90m   ${cnt} ${e}[0m"
+        for (( k = 1; k <= vis; k++ )); do
+            j=$(( off + k )); nm=${names[j]}; (( ${#nm} > bw - 24 )) && nm="${nm[1,$(( bw - 25 ))]}…"
+            local r=$(( row + 1 + k ))
+            o+="${e}[${r};${x0}H${bc}│${e}[0m"
+            (( j == sel )) && o+="${e}[${r};$(( x0 + 1 ))H${e}[48;2;62;68;81m${(l:$(( bw - 2 )):: :)}"
+            o+="${e}[${r};$(( x0 + 2 ))H${e}[34m"$''"${e}[${r};$(( x0 + 5 ))H${e}[$( (( j == sel )) && print -n '1;97' || print -n '1;34')m${nm}"
+            o+="${e}[${r};$(( x1 - 1 - ${#rights[j]} ))H${e}[0;90m$( (( j == sel )) && print -n "${e}[48;2;62;68;81m")${rights[j]}${e}[0m${e}[${r};${x1}H${bc}│${e}[0m"
+        done
+        local rb=$(( row + 2 + vis ))
+        o+="${e}[${rb};${x0}H${bc}╰${hl}╯${e}[0m"
+        (( $#dirs > vis )) && o+="${e}[${rb};$(( x0 + 2 ))H${e}[90m ${sel}/$#dirs ${e}[0m"
+        keys="${e}[48;2;62;68;81;97m tab ${e}[0;90m open   ${e}[48;2;62;68;81;97m enter ${e}[0;90m go   ${e}[48;2;62;68;81;97m esc ${e}[0;90m close"
+        o+="${e}[${rb};$(( x1 - 39 ))H ${keys} ${e}[0m${e}[${row};${col}H${e}[?25h"
+        print -rn -- "$o" > /dev/tty
+        key=''; read -s -k 1 key
+        if [[ $key == $'\e' ]]; then rest=''; while read -s -t 0.03 -k 1 n; do rest+=$n; done; key+=$rest; fi
+        case $key in
+            ''|$'\e')            break ;;                                       # Ctrl+Espaco (NUL) / Esc
+            $'\e[B'|$'\eOB')     (( sel < $#dirs )) && (( sel++ )) ;;
+            $'\e[A'|$'\eOA')     (( sel > 1 )) && (( sel-- )) ;;
+            $'\e[6~')            sel=$(( sel + vis > $#dirs ? $#dirs : sel + vis )) ;;
+            $'\e[5~')            sel=$(( sel - vis < 1 ? 1 : sel - vis )) ;;
+            $'\t')               LBUFFER="$pre${(q)po}${(q)names[sel]}/"; [[ $po == '~/'* ]] && LBUFFER="$pre~/${(q)po#\~/}${(q)names[sel]}/"; zle -R ;;
+            $'\r'|$'\n')         LBUFFER="$pre${(q)po}${(q)names[sel]}/"; [[ $po == '~/'* ]] && LBUFFER="$pre~/${(q)po#\~/}${(q)names[sel]}/"
+                                 __dm_clear; zle accept-line; return ;;
+            $'\x7f')             LBUFFER=${LBUFFER%?}; zle -R ;;
+            $'\x08')             __ctrl_bs; zle -R ;;
+            $'\x03')             __dm_clear; LBUFFER=''; zle send-break; return ;;
+            [[:print:]])         LBUFFER+=$key; zle -R ;;
+        esac
+    done
+    __dm_clear
+    zle reset-prompt
+}
+zle -N __dir_menu; zle -N __ctrl_bs
+bindkey '^@' __dir_menu '^H' __ctrl_bs
+
+# atalhos iguais ao PowerShell
+__tab() { zle expand-or-complete }   # Tab = completar (sem sugestoes cinzentas)
+__ctrl_w() { exit }                                                                                   # Ctrl+W sai/fecha
+__ctrl_l() { ff; zle reset-prompt }                                                                   # Ctrl+L = limpa
+__ctrl_d() { __wt -w 0 sp wsl.exe -d $WSL_DISTRO_NAME --cd ~ >/dev/null 2>&1; sleep 0.4; ff; zle reset-prompt }   # Ctrl+D divide (so no prompt)
+zle -N __tab; zle -N __ctrl_w; zle -N __ctrl_l; zle -N __ctrl_d
+bindkey '^I' __tab '^W' __ctrl_w '^L' __ctrl_l '^D' __ctrl_d
+bindkey '^[[1;5C' forward-word '^[[1;5D' backward-word '^[[H' beginning-of-line '^[[F' end-of-line '^[[3~' delete-char
+
+cd ~    # abre sempre na home
+ff

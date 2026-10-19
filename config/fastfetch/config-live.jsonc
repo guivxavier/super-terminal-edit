@@ -1,0 +1,44 @@
+{
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+    "logo": {
+        "type": "data",
+        "source": "$1██   ██ ██    ██ ███    ██\n$1██  ██  ██    ██ ████   ██\n$2█████   ██    ██ ██ ██  ██\n$3██  ██   ██  ██  ██  ██ ██\n$3██   ██   ████   ██   ████",
+        "color": { "1": "blue", "2": "cyan", "3": "magenta" },
+        "padding": { "top": 6, "left": 3, "right": 6 }
+    },
+    "display": {
+        "separator": "  ",
+        "key": { "width": 12 },
+        "color": { "keys": "90" }
+    },
+    "modules": [
+
+        { "type": "custom", "format": "\u001b[1;31m  system  \u001b[0;90m──────────────────────────────" },
+        { "type": "os",       "key": "  os",      "format": "{name} {version}" },
+        { "type": "shell",    "key": "  shell",   "format": "{pretty-name} {version}" },
+        { "type": "uptime",   "key": "  uptime" },
+        "break",
+
+        { "type": "custom", "format": "\u001b[1;33m  hardware \u001b[0;90m─────────────────────────────" },
+        { "type": "cpuusage", "key": "  cpu",     "format": "AMD Ryzen 5 5600H  {avg}" },
+        { "type": "gpu",      "key": "  gpu",     "format": "{name}", "hideType": "integrated" },
+        { "type": "gpu",      "key": "  gpu uso", "driverSpecific": true, "hideType": "integrated", "format": "{?core-usage-num}{core-usage-num}  {?}\u001b[90mvram {dedicated-percentage-num}" },
+        { "type": "memory",   "key": "  ram",     "format": "{used} / {total}  {percentage}" },
+        { "type": "disk",     "key": "  disk",    "format": "{mountpoint}  {size-used} / {size-total}  {size-percentage}" },
+        { "type": "battery",  "key": "  battery", "format": "{capacity}  {status}" },
+        "break",
+
+        { "type": "custom", "format": "\u001b[1;32m  network \u001b[0;90m─────────────────────────────────" },
+        { "type": "wifi",     "key": "  wi-fi",   "format": "{ssid}  {signal-quality}" },
+        { "type": "localip",  "key": "  ip lan",  "showIpv6": false, "format": "{ipv4}" },
+        "break",
+
+        { "type": "custom", "format": "\u001b[1;34m  tailscale \u001b[0;90m────────────────────────────" },
+        { "type": "command",  "key": "  status", "shell": "cmd.exe", "param": "/c", "text": "type %LOCALAPPDATA%\\pwsh-init-cache\\ts1.txt" },
+        { "type": "command",  "key": "\u001b[0m", "shell": "cmd.exe", "param": "/c", "text": "type %LOCALAPPDATA%\\pwsh-init-cache\\ts2.txt" },
+        { "type": "command",  "key": "\u001b[0m", "shell": "cmd.exe", "param": "/c", "text": "type %LOCALAPPDATA%\\pwsh-init-cache\\ts3.txt" },
+        { "type": "command",  "key": "\u001b[0m", "shell": "cmd.exe", "param": "/c", "text": "type %LOCALAPPDATA%\\pwsh-init-cache\\ts4.txt" },
+        { "type": "command",  "key": "\u001b[0m", "shell": "cmd.exe", "param": "/c", "text": "type %LOCALAPPDATA%\\pwsh-init-cache\\ts5.txt" },
+        { "type": "command",  "key": "\u001b[0m", "shell": "cmd.exe", "param": "/c", "text": "type %LOCALAPPDATA%\\pwsh-init-cache\\ts6.txt" }
+    ]
+}

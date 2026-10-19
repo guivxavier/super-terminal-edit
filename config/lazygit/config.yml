@@ -1,0 +1,26 @@
+# delta para os diffs (cores e realce de sintaxe)
+git:
+  diffRenderers:
+    - colorArg: always
+      command: delta --dark --paging=never --line-numbers --syntax-theme OneHalfDark
+# tema One Dark (o mesmo do Windows Terminal, fzf, bat, yt e st)
+gui:
+  nerdFontsVersion: "3"
+  border: rounded
+  theme:
+    activeBorderColor: ["#61AFEF", bold]
+    inactiveBorderColor: ["#4B5263"]
+    searchingActiveBorderColor: ["#E5C07B", bold]
+    optionsTextColor: ["#61AFEF"]
+    selectedLineBgColor: ["#3E4451"]
+    inactiveViewSelectedLineBgColor: ["#2C313A"]
+    cherryPickedCommitFgColor: ["#61AFEF"]
+    cherryPickedCommitBgColor: ["#3E4451"]
+    markedBaseCommitFgColor: ["#E5C07B"]
+    markedBaseCommitBgColor: ["#3E4451"]
+    unstagedChangesColor: ["#E06C75"]
+    defaultFgColor: ["#ABB2BF"]
+  authorColors:
+    "*": "#C678DD"
+os:
+  editPreset: micro

@@ -1,0 +1,13 @@
+{
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+    "logo": { "type": "none" },
+    "display": { "separator": "  ", "key": { "width": 12 }, "color": { "keys": "90" } },
+    "modules": [
+        { "type": "custom", "format": "\u001b[1;33m  hardware \u001b[0;90m─────────────────────────────" },
+        { "type": "cpuusage", "key": "  cpu",     "waitTime": 50, "format": "AMD Ryzen 5 5600H  {avg}" },
+        { "type": "gpu",      "key": "  gpu",     "format": "{name}", "hideType": "integrated" },
+        { "type": "memory",   "key": "  ram",     "format": "{used} / {total}  {percentage}" },
+        { "type": "disk",     "key": "  disk",    "format": "{mountpoint}  {size-used} / {size-total}  {size-percentage}" },
+        { "type": "battery",  "key": "  battery", "format": "{capacity}  {status}" }
+    ]
+}

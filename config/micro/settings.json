@@ -1,0 +1,12 @@
+{
+    "colorscheme": "one-dark",
+    "mkparents": true,
+    "savecursor": true,
+    "saveundo": true,
+    "scrollbar": true,
+    "diffgutter": true,
+    "softwrap": true,
+    "tabsize": 4,
+    "tabstospaces": true,
+    "hlsearch": true
+}

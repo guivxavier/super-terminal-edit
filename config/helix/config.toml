@@ -1,0 +1,34 @@
+# helix (hx): o mesmo nos dois PCs e no WSL (%APPDATA%\helix e ~/.config/helix no WSL apontam para aqui)
+theme = "onedark"
+
+[editor]
+mouse = true
+cursorline = true
+color-modes = true
+true-color = true
+bufferline = "multiple"
+end-of-line-diagnostics = "hint"
+
+[editor.cursor-shape]
+insert = "bar"
+normal = "block"
+select = "underline"
+
+[editor.inline-diagnostics]
+cursor-line = "warning"
+
+[editor.lsp]
+display-inlay-hints = true
+
+[editor.indent-guides]
+render = true
+
+[editor.file-picker]
+hidden = false
+
+# Ctrl+S guarda em qualquer modo (como no micro)
+[keys.normal]
+C-s = ":write"
+
+[keys.insert]
+C-s = ":write"

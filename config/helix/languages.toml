@@ -1,0 +1,4 @@
+# language servers: pylsp (~\.local\pylsp, venv) e clangd (~\.local\clangd); o perfil junta-os ao fim do PATH
+[[language]]
+name = "python"
+language-servers = ["pylsp"]

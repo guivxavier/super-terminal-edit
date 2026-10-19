@@ -1,0 +1,10 @@
+# sessoes e segredos nunca entram no repo (vivem em ~\.config de cada PC)
+*cookies*.txt
+*-auth.txt
+*.token
+*.key
+.env
+# caches e restos de testes
+*.log
+tests/out/
+terminal/wezterm/session.json
