@@ -61,6 +61,37 @@ $Apps = @(
     @('charmbracelet.glow', 'markdown'), @('yt-dlp.yt-dlp', 'yt'), @('Gyan.FFmpeg', 'yt / st'), @('shinchiro.mpv', 'the video player'),
     @('hpjansson.Chafa', 'images in the terminal'), @('jqlang.jq', 'JSON'), @('bootandy.dust', 'disk usage'), @('tldr-pages.tlrc', 'tldr')
 )
+# winget: "Failed to extract the contents of the archive" (-1978335140) acontece em alguns Windows com o metodo de
+# extracao por omissao (o do Explorador); a solucao documentada e o "tar". So durante a instalacao: no fim volta tudo
+$WgSettings = "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\settings.json"
+$WgSaved = $null; $WgTar = $false
+function Use-WingetTar {
+    if ($script:WgTar) { return }
+    $script:WgTar = $true
+    if (Test-Path $WgSettings) { $script:WgSaved = [IO.File]::ReadAllText($WgSettings) } else { $script:WgSaved = '' }
+    $j = $null
+    try { $j = (($script:WgSaved -split "`n" | Where-Object { $_ -notmatch '^\s*//' }) -join "`n") | ConvertFrom-Json } catch { }
+    if (-not $j) { $j = New-Object PSObject }
+    if (-not $j.installBehavior) { $j | Add-Member -NotePropertyName installBehavior -NotePropertyValue (New-Object PSObject) -Force }
+    $j.installBehavior | Add-Member -NotePropertyName archiveExtractionMethod -NotePropertyValue 'tar' -Force
+    New-Item -ItemType Directory (Split-Path $WgSettings) -Force | Out-Null
+    [IO.File]::WriteAllText($WgSettings, ($j | ConvertTo-Json -Depth 10))
+}
+function Restore-WingetSettings {
+    if (-not $script:WgTar) { return }
+    if ($script:WgSaved) { [IO.File]::WriteAllText($WgSettings, $script:WgSaved) } else { Remove-Item $WgSettings -ErrorAction SilentlyContinue }
+}
+function Install-UutilsDirect {
+    # o pacote do uutils no winget (0.12.0) espera um ficheiro que o zip ja nao traz (-1978335141): vai direto a
+    # versao oficial no GitHub do uutils, para ~\.local\coreutils (o perfil procura-o la tambem)
+    $rel = Invoke-RestMethod 'https://api.github.com/repos/uutils/coreutils/releases/latest' -UseBasicParsing -Headers @{ 'User-Agent' = 'SuperTerminal' }
+    $asset = $rel.assets | Where-Object { $_.name -match 'x86_64-pc-windows-msvc\.zip$' } | Select-Object -First 1
+    if (-not $asset) { throw 'no Windows build in the latest uutils release' }
+    $zip = Join-Path $env:TEMP $asset.name
+    Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
+    $dst = Join-Path $Local 'coreutils'; New-Item -ItemType Directory $dst -Force | Out-Null
+    Expand-Archive $zip $dst -Force; Remove-Item $zip -ErrorAction SilentlyContinue
+}
 if (-not $SkipApps) {
     Step 'Programs (winget)'
     Info 'Windows may ask for admin for some of them'
@@ -68,11 +99,19 @@ if (-not $SkipApps) {
         # (um a um: o "winget list" sem --id corta os nomes compridos com "...")
         & winget list -e --id $a[0] --accept-source-agreements --disable-interactivity *> $null
         if ($LASTEXITCODE -eq 0) { Good "$($a[0])  (already installed)"; continue }
+        if ($a[0] -eq 'uutils.coreutils' -and (Get-ChildItem "$Local\coreutils" -Filter 'coreutils-*' -Directory -ErrorAction SilentlyContinue)) { Good 'uutils.coreutils  (already installed)'; continue }
         Info "installing $($a[0])  - $($a[1])"
         $extra = @(); if ($a[0] -eq 'Microsoft.PowerShell') { $extra = @('--installer-type', 'wix') }
-        & winget install -e --id $a[0] --silent --accept-package-agreements --accept-source-agreements --disable-interactivity @extra
+        $wg = { & winget install -e --id $a[0] --silent --accept-package-agreements --accept-source-agreements --disable-interactivity @extra }
+        & $wg
+        if ($LASTEXITCODE -eq -1978335140) { Info 'the archive did not extract: trying again with tar'; Use-WingetTar; & $wg }
+        if ($LASTEXITCODE -ne 0 -and $a[0] -eq 'uutils.coreutils') {
+            Info 'the winget package is broken: getting it from the uutils releases on GitHub'
+            try { Install-UutilsDirect; $global:LASTEXITCODE = 0 } catch { Warn "uutils: $($_.Exception.Message)" }
+        }
         if ($LASTEXITCODE -eq 0) { Good $a[0] } else { Warn "$($a[0]) did not install (code $LASTEXITCODE): the rest goes on; run this again later" }
     }
+    Restore-WingetSettings
     # (o que o winget instalou so entra no PATH dos processos novos: este continua com o antigo)
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'User')
 }

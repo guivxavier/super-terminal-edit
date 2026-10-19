@@ -364,6 +364,8 @@ if (-not [Console]::IsOutputRedirected) {
 # Os nossos (ls, cat, cd, fetch...) sao funcoes e ganham sempre aos .exe.
 # (GetDirectories em vez do Resolve-Path com * : ~20 ms -> ~1 ms em cada separador)
 $UuDir = try { $uuPk = @([IO.Directory]::GetDirectories("$env:LOCALAPPDATA\Microsoft\WinGet\Packages", 'uutils.coreutils_*')); if ($uuPk) { @([IO.Directory]::GetDirectories($uuPk[-1], 'coreutils-*'))[-1] } } catch { $null }
+# (sem o pacote do winget: a versao que o instalador foi buscar ao GitHub do uutils)
+if (-not $UuDir) { $UuDir = try { @([IO.Directory]::GetDirectories("$HOME\.local\coreutils", 'coreutils-*'))[-1] } catch { $null } }
 if ($UuDir) {
     $env:PATH = "$UuDir;$env:PATH"   # a frente do System32 (sort, find, hostname...)
     Remove-Item Alias:rm, Alias:rmdir, Alias:cp, Alias:mv, Alias:sort, Alias:tee, Alias:sleep, Alias:del, Alias:copy, Alias:move -Force -ErrorAction SilentlyContinue
