@@ -757,9 +757,17 @@ function Scroll-Grid($s, $L, [int]$dir) {
 function Update-Pending {
     # desenha as imagens da página que entretanto ficaram prontas
     if (-not $script:Pending -or -not $script:Pending.Count) { return }
-    $o = ''
+    $o = ''; $now = [Environment]::TickCount64
     foreach ($x in @($script:Pending)) {
-        if ($Sixel.ContainsKey("$($x.id)-$($L.TW)-$($L.TH)-s")) { $p = Get-TilePos $x.i $L; $o += "$e[$($p.r);$($p.c)H" + $Sixel["$($x.id)-$($L.TW)-$($L.TH)-s"] + (Get-DurBadge $x.v $p $L); [void]$script:Pending.Remove($x) }
+        $k = "$($x.id)-$($L.TW)-$($L.TH)-s"
+        if (-not $x.t) { $x.t = $now; $x.n = 0 }
+        # a imagem ja foi descarregada mas o thread nao a chegou a preparar (ex.: esperou 5 s por outro e desistiu):
+        # prepara-a aqui; sem imagem ao fim de 3 s e sem ninguem a descarrega-la, pede-a outra vez (ate 3 vezes)
+        if (-not $Sixel.ContainsKey($k) -and $now - $x.t -gt 1500) {
+            if ([IO.File]::Exists("$Dir\$($x.id)-hq.jpg")) { [void](Get-Sixel $x.id $L) }
+            elseif ($now - $x.t -gt 3000 -and $x.n -lt 3 -and -not $ThumbBusy.ContainsKey($x.id)) { Start-SixelJob @($x.id) $L; $x.t = $now; $x.n++ }
+        }
+        if ($Sixel.ContainsKey($k)) { $p = Get-TilePos $x.i $L; $o += "$e[$($p.r);$($p.c)H" + $Sixel[$k] + (Get-DurBadge $x.v $p $L); [void]$script:Pending.Remove($x) }
     }
     if ($o) { [Console]::Write($o) }
 }
