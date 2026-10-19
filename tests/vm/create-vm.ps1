@@ -36,8 +36,10 @@ try {
     VBox unattended install $Name "--iso=$Iso" "--user=$user" "--password=$plain" "--full-user-name=$user" --image-index=$idx --locale=pt_PT --country=PT --time-zone=Europe/Lisbon --install-additions --start-vm=gui
 } finally { $plain = $null }
 ''
-'a instalar (uns 15-30 min; a VM reinicia sozinha algumas vezes).'
+'a instalar (uns 15-30 min; a VM reinicia sozinha algumas vezes). Nao mexas ate aparecer o ambiente de trabalho:'
+'as Guest Additions (copiar / colar entre o PC e a VM) instalam-se sozinhas no fim.'
 'quando estiveres no ambiente de trabalho da VM:'
 "  1. snapshot limpo:  & '$vbm' snapshot $Name take limpo"
-'  2. na VM: Explorador > Rede > \\vboxsvr\SuperTerminal > install.cmd'
+'  2. na VM, no PowerShell (como o colega):  irm https://raw.githubusercontent.com/kevgoncalves/SuperTerminal/main/get.ps1 | iex'
+'     (ou o repo local: Explorador > Rede > \\vboxsvr\SuperTerminal > install.cmd)'
 "  para voltar ao zero:  & '$vbm' snapshot $Name restore limpo   (com a VM desligada)"
