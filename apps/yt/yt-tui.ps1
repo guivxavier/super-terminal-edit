@@ -1172,6 +1172,7 @@ function Show-Watch($s) {
             param($st)
             $src = if ($st) { @($st.v) + $(if ($st.a) { "--audio-file=$($st.a)" }) } else { @($url) }
             if (-not $mp -or $mp.HasExited) {
+                $script:PrevPath = $null   # (mpv novo: o que comecar a tocar e este video)
                 $geo = '--geometry={0}x{1}+{2}+{3}' -f [int]($vw * $g.cw), [int]($vh * $g.ch), [int]($g.x + ($lm - 1) * $g.cw), [int]($g.y + ($vr - 1) * $g.ch)
                 # sem --force-window: a janela só aparece quando o vídeo já está a tocar (nada de caixa preta)
                 # yt-url: para o menu de qualidade reabrir pelo YouTube (scripts\yt-quality.lua)
@@ -1183,6 +1184,10 @@ function Show-Watch($s) {
                 [void][Yt.Job]::Add($mp.Handle)
             }
             else {
+                # o mesmo mpv: esconde a janela (senao ficava por cima do painel de carregamento com a imagem do anterior) e
+                # guarda o ficheiro que tinha, para so dar o novo como "a tocar" quando ele mudar
+                $script:PrevPath = Get-MpvProp 'path'
+                if ($MpvHwnd.h -and $MpvHwnd.h -ne [IntPtr]::Zero) { [void][Yt.Vd]::SetWindowPos($MpvHwnd.h, [IntPtr]::Zero, 0, 0, 0, 0, $SwpHide) }
                 Send-Mpv 'change-list', 'script-opts', 'append', "yt-url=$url"
                 if ($st) { Send-Mpv 'loadfile', $st.v, 'replace', '-1', $(if ($st.a) { "audio-file=$($st.a)" } else { '' }) } else { Send-Mpv 'loadfile', $url }
             }
@@ -1193,7 +1198,7 @@ function Show-Watch($s) {
         # tenta uma vez pelo endereço do YouTube; se mesmo assim falhar, diz que falhou em vez de ficar a carregar
         $loadSw = [Diagnostics.Stopwatch]::StartNew(); $retried = -not $st; $failed = $false
         $fs = $null; $playing = $false; $spin = 0; $tick = 0; $frames = [char[]]'⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-        $ended = $false; $autoplay = $false; $endSw = $null; $endN = 0   # ecra de fim (ver mais abaixo)
+        $ended = $false; $autoplay = $false; $endSw = $null; $endN = 0; $endCard = $null   # ecra de fim (ver mais abaixo)
 
         $sb = [Text.StringBuilder]::new(); [void]$sb.Append("$e[2J")
         # enquanto abre: painel escuro liso no lugar do video (a thumbnail nao aparece; o indicador vai ao centro)
@@ -1304,7 +1309,11 @@ function Show-Watch($s) {
             }
             if (-not $playing -and -not $failed) {
                 # até o vídeo começar: painel de carregamento no lugar do vídeo (a janela do mpv só aparece quando já toca)
-                if ($spin % 4 -eq 0 -and $null -ne (Get-MpvProp 'time-pos')) { $playing = $true; Trace "a tocar $([int]$watchSw.ElapsedMilliseconds) ms depois do Enter" }
+                # (no mesmo mpv: o tempo e o do video anterior ate o novo abrir; so conta quando o ficheiro ja mudou)
+                if ($spin % 4 -eq 0 -and $null -ne (Get-MpvProp 'time-pos') -and (-not $script:PrevPath -or (Get-MpvProp 'path') -ne $script:PrevPath)) {
+                    $playing = $true; $script:PrevPath = $null; Trace "a tocar $([int]$watchSw.ElapsedMilliseconds) ms depois do Enter"
+                    if ($MpvHwnd.h -and $MpvHwnd.h -ne [IntPtr]::Zero -and -not $away) { [void][Yt.Vd]::SetWindowPos($MpvHwnd.h, [IntPtr]::Zero, 0, 0, 0, 0, $SwpShow) }
+                }
                 elseif ($mp.HasExited -or $loadSw.Elapsed.TotalSeconds -gt $(if ($retried) { 30 } else { 10 })) {
                     if (-not $retried) { $retried = $true; $StreamCache.Remove($v.id); . $open $null; $loadSw.Restart() }
                     else {
@@ -1342,30 +1351,49 @@ function Show-Watch($s) {
             if ($playing -and -not $ended -and $mp.HasExited) { $ended = $true; $autoplay = [bool]$next.Count; $endSw = [Diagnostics.Stopwatch]::StartNew(); $endN = 0 }
             if ($ended) {
                 if ($autoplay -and $next.Count -and $endSw.Elapsed.TotalSeconds -ge 10) { $v = $next[$ns]; break }
-                if ($endN++ % 6 -eq 0) {
-                    $c = $vr + [Math]::Floor($vh / 2); $o = ''
-                    for ($q = 0; $q -lt $vh; $q++) { $o += "$e[$($vr + $q);${lm}H$panelBg" + (' ' * $vw) }
-                    $chips = { param($list) ($list | ForEach-Object { "$e[48;2;62;68;81;97m $($_[0]) $panelBg$e[0;90m$panelBg $($_[1])" }) -join "$panelBg     " }
-                    $chipLen = { param($list) ($list | ForEach-Object { $_[0].Length + $_[1].Length + 3 } | Measure-Object -Sum).Sum + 5 * ($list.Count - 1) }
-                    if ($next.Count) {
-                        $nx = $next[$ns]; $nt = Fit $nx.t ([Math]::Min(70, $vw - 8)); $nc = "$($nx.ch)$(if ($nx.dur -and $nx.dur -ne 'NA') { "   $([char]0x00B7)   $($nx.dur)" })"
-                        $o += & $center ($c - 4) "$e[0;90mup next" 7
-                        $o += & $center ($c - 2) "$e[1;97m$nt" $nt.Length
-                        $o += & $center ($c - 1) "$e[0;37m$nc" $nc.Length
-                        if ($autoplay) {
-                            $left = [Math]::Max(0, 10 - $endSw.Elapsed.TotalSeconds); $bwid = [Math]::Min(36, $vw - 8); $fill = [int]($bwid * $left / 10)
-                            $bar = "$e[38;2;224;108;117m" + ([string][char]0x2501 * $fill) + "$e[38;2;75;82;99m" + ([string][char]0x2501 * ($bwid - $fill))
-                            $o += & $center ($c + 1) $bar $bwid
-                            $pl = "playing in $([Math]::Ceiling($left)) s"; $o += & $center ($c + 2) "$e[0;90m$pl" $pl.Length
-                        }
+                $chips = { param($list) ($list | ForEach-Object { "$e[48;2;62;68;81;97m $($_[0]) $panelBg$e[0;90m$panelBg $($_[1])" }) -join "$panelBg     " }
+                $chipLen = { param($list) ($list | ForEach-Object { $_[0].Length + $_[1].Length + 3 } | Measure-Object -Sum).Sum + 5 * ($list.Count - 1) }
+                if ($next.Count -and $endN++ % 3 -eq 0) {
+                    # como o cartao de autoplay do YouTube: miniatura do seguinte, titulo, canal, views / ha quanto tempo,
+                    # a contagem e as teclas. O cartao desenha-se uma vez (por video escolhido); depois so a barra muda
+                    $nx = $next[$ns]
+                    $th = [Math]::Max(4, [Math]::Min(9, $vh - 9)); $tw = [int][Math]::Round($th * 16 / 9 / $CellRatio)
+                    $cw = [Math]::Min($vw - 6, $tw + 3 + 56); $tx = $tw + 3; $iw = $cw - $tx   # (largura do texto ao lado da miniatura)
+                    $cx = $lm + [Math]::Floor(($vw - $cw) / 2); $cy = $vr + [Math]::Max(1, [Math]::Floor(($vh - ($th + 7)) / 2))
+                    $sig = "$($nx.id)|$autoplay"
+                    if ($endCard -ne $sig) {
+                        $endCard = $sig; $o = ''
+                        for ($q = 0; $q -lt $vh; $q++) { $o += "$e[$($vr + $q);${lm}H$panelBg" + (' ' * $vw) }
+                        $o += "$e[$cy;${cx}H$panelBg$e[0;90mUp next$e[0m"
+                        $jp = "$Dir\$($nx.id).jpg"; if (-not [IO.File]::Exists($jp)) { $jp = "$Dir\$($nx.id)-hq.jpg" }
+                        $img = if ([IO.File]::Exists($jp)) { Get-Img $jp $tw $th -Stretch } else { $null }
+                        if ($img) { $o += "$e[$($cy + 2);${cx}H$img" } else { for ($q = 0; $q -lt $th; $q++) { $o += "$e[$($cy + 2 + $q);${cx}H$e[48;2;44;49;58m" + (' ' * $tw) + "$e[0m" } }
+                        if ($nx.dur -and $nx.dur -notin 'NA', 'live') { $o += "$e[$($cy + 1 + $th);$($cx + $tw - $nx.dur.Length - 2)H$e[48;2;20;20;20;97m $($nx.dur) $e[0m" }
+                        $r = $cy + 2
+                        foreach ($l in @(Wrap-Lines $nx.t $iw 2)) { $o += "$e[$r;$($cx + $tx)H$panelBg$e[1;97m$l$e[0m"; $r++ }
+                        $o += "$e[$($r + 1);$($cx + $tx)H$panelBg$e[0;37m$(Fit $nx.ch $iw)$e[0m".TrimEnd()
+                        $nm = @($(if ($nx.v -and $nx.v -ne 'NA') { "$(Format-Num $nx.v) views" }), (Format-Ago $nx.ts)) | Where-Object { $_ }
+                        if ($nm) { $o += "$e[$($r + 2);$($cx + $tx)H$panelBg$e[0;90m$($nm -join "  $([char]0x00B7)  ")$e[0m" }
                         $ks = [Collections.Generic.List[object]]::new(); $ks.Add(@('enter', 'play now')); $ks.Add(@('r', 'watch again'))
                         if ($autoplay) { $ks.Add(@('c', 'cancel')) }; $ks.Add(@('esc', 'back'))   # (List: o "+" de arrays desfazia os pares)
+                        $o += & $center ($cy + $th + 6) (& $chips $ks) (& $chipLen $ks)
+                        [Console]::Write($o + "$e[0m")
                     }
-                    else {
-                        $o += & $center ($c - 2) "$e[31m$([char]0xf01e)" 1
-                        $o += & $center ($c) "$e[1;97mthat's the end" 14
-                        $ks = @(@('r', 'watch again'), @('esc', 'back'))
-                    }
+                    # contagem: barra a esvaziar por baixo do cartao e "playing in N s" a direita do "Up next"
+                    $o = ''
+                    if ($autoplay) {
+                        $left = [Math]::Max(0, 10 - $endSw.Elapsed.TotalSeconds); $fill = [int]($cw * $left / 10)
+                        $o += "$e[$($cy + $th + 3);${cx}H$panelBg$e[38;2;224;108;117m" + ([string][char]0x2501 * $fill) + "$e[38;2;75;82;99m" + ([string][char]0x2501 * ($cw - $fill))
+                        $pl = "playing in $([Math]::Ceiling($left)) s"; $o += "$e[$cy;$($cx + $cw - $pl.Length)H$panelBg$e[0;37m$pl"
+                    } else { $o += "$e[$($cy + $th + 3);${cx}H$panelBg" + (' ' * $cw) + "$e[$cy;$($cx + $cw - 16)H$panelBg" + (' ' * 16) }
+                    [Console]::Write($o + "$e[0m")
+                }
+                elseif (-not $next.Count -and $endN++ % 6 -eq 0) {
+                    $c = $vr + [Math]::Floor($vh / 2); $o = ''
+                    for ($q = 0; $q -lt $vh; $q++) { $o += "$e[$($vr + $q);${lm}H$panelBg" + (' ' * $vw) }
+                    $o += & $center ($c - 2) "$e[31m$([char]0xf01e)" 1
+                    $o += & $center ($c) "$e[1;97mthat's the end" 14
+                    $ks = @(@('r', 'watch again'), @('esc', 'back'))
                     $o += & $center ($c + 4) (& $chips $ks) (& $chipLen $ks)
                     [Console]::Write($o + "$e[0m")
                 }
@@ -1406,7 +1434,7 @@ function Show-Watch($s) {
                     # ao mudar de ambiente de trabalho e voltar, o Windows pode deixar a janela do vídeo escondida ("cloaked")
                     # -> esconder e mostrar outra vez (no máximo 3 vezes seguidas, para não ficar em ciclo)
                     $cl = 0; [void][Yt.Vd]::DwmGetWindowAttribute($hv, 14, [ref]$cl, 4)
-                    if (-not $vis) { [void][Yt.Vd]::SetWindowPos($hv, [IntPtr]::Zero, 0, 0, 0, 0, $SwpShow) }
+                    if (-not $vis -and $playing -and -not $ended) { [void][Yt.Vd]::SetWindowPos($hv, [IntPtr]::Zero, 0, 0, 0, 0, $SwpShow) }   # (a carregar o seguinte: fica escondida)
                     elseif ($cl -ne 0 -and $hideN -lt 3) { $hideN++; [void][Yt.Vd]::SetWindowPos($hv, [IntPtr]::Zero, 0, 0, 0, 0, $SwpHide); [void][Yt.Vd]::SetWindowPos($hv, [IntPtr]::Zero, 0, 0, 0, 0, $SwpShow) }
                     elseif ($cl -eq 0) { $hideN = 0 }
                 }
