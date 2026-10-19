@@ -337,12 +337,14 @@ function Start-ListJob([string]$key, [string]$src, [int]$n, [string[]]$extra = @
     $old = $Jobs[$key]; if ($old -and $old.p) { try { if (-not $old.p.HasExited) { $old.p.Kill() } } catch {} }
     # pesquisa: pedido direto a API do YouTube (yt-search.ps1, ~1 s) em vez do yt-dlp (~4,5 s). 1.a pagina so com 20
     # (chegam para o ecra); o "mais" continua com o token que ficou em <ficheiro>.next. Sem token: yt-dlp como antes.
-    if ($src -match '^ytsearch\d*:(.+)$') {
-        $q = $Matches[1]; $tok = if ($from -gt 1 -and $SearchNext[$q] -and (Test-Path $SearchNext[$q])) { (Get-Content $SearchNext[$q] -Raw).Trim() }
+    # (ytrelated:<id> = os relacionados do video, a barra lateral do YouTube: o mesmo yt-search.ps1, com -Related)
+    if ($src -match '^(ytsearch\d*|ytrelated):(.+)$') {
+        $rel = $Matches[1] -eq 'ytrelated'; $q = $Matches[2]; $sk = "$($Matches[1]):$q"
+        $tok = if ($from -gt 1 -and $SearchNext[$sk] -and (Test-Path $SearchNext[$sk])) { (Get-Content $SearchNext[$sk] -Raw).Trim() }
         if ($from -eq 1 -or $tok) {
-            $sa = @('-NoProfile', '-File', "$HOME\.config\yt-search.ps1", '-Query', $q, '-Out', $out, '-Sep', $Sep, '-Count', $(if ($tok) { 40 } else { 20 })) + $(if ($tok) { '-Token', $tok })
+            $sa = @('-NoProfile', '-File', "$HOME\.config\yt-search.ps1", $(if ($rel) { '-Related' } else { '-Query' }), $q, '-Out', $out, '-Sep', $Sep, '-Count', $(if ($tok) { 40 } else { 20 })) + $(if ($tok) { '-Token', $tok })
             $p = try { Start-Process pwsh -WindowStyle Hidden -PassThru -ArgumentList (Quote-Args $sa) -ErrorAction Stop } catch { $null }
-            $SearchNext[$q] = "$out.next"
+            $SearchNext[$sk] = "$out.next"
             $Jobs[$key] = @{ p = $p; f = $out; t = [datetime]::Now }
             return
         }
@@ -1155,8 +1157,9 @@ function Show-Watch($s) {
                     $(if ($ck) { '--mark-watched' }) + $meta) $wf
         }
 
-        # a seguir: recomendações do YouTube para este vídeo (a playlist "mix"), 20 de cada vez
-        $relSrc = "https://www.youtube.com/watch?v=$($v.id)&list=RD$($v.id)"
+        # a seguir: os relacionados deste video (a barra lateral do YouTube; a playlist "mix" de antes enchia-se do
+        # mesmo canal), 20 de cada vez
+        $relSrc = "ytrelated:$($v.id)"
         Start-ListJob 'rel' $relSrc 20 @($ck)   # (fecha o pedido anterior, se ainda estiver a correr)
         $next = [Collections.Generic.List[object]]::new(); $seen = [Collections.Generic.HashSet[string]]::new(); [void]$seen.Add($v.id)
         $relFrom = 1; $relDone = $false; $relBusy = $true; $skelDone = $false
@@ -1244,7 +1247,7 @@ function Show-Watch($s) {
             # como no YouTube: nome (branco; o do canal num chip) e ha quanto tempo; o texto ate 4 linhas; gostos por baixo
             $all = @($info.comments | Where-Object { $_ }); $shown = 0
             foreach ($cm in @($all | Select-Object -Skip $cOff)) {
-                $room = [Math]::Min(4, $H - 3 - ($rr + 1))   # (o que ainda couber ate ao fundo)
+                $room = [Math]::Min(4, $H - 2 - $rr)   # (linhas de texto que ainda cabem ate a penultima; a ultima e a do "more")
                 if ($room -lt 1) { break }
                 $txt = @(Wrap-Lines $cm.text ($lw - 2) $room)
                 $likes = Format-Num $cm.like_count
@@ -1288,10 +1291,12 @@ function Show-Watch($s) {
                 $o += "$e[$infoRow;$($lm + $lw - $ms.Length)H" + (($meta | ForEach-Object { "$e[48;2;62;68;81;97m $_ $e[0m" }) -join "  ")
                 # descrição: mantém os parágrafos, até 4 linhas, links a azul, dentro de um cartão
                 $d = [Collections.Generic.List[string]]::new()
-                foreach ($par in ("$($info.description)" -split "`n")) { if ($par.Trim()) { foreach ($l in @(Wrap-Lines $par ($lw - 4) 4)) { $d.Add($l) } }; if ($d.Count -ge 4) { break } }
+                # (encolhe para deixar sempre ~8 linhas aos comentarios: num ecra mais baixo nao sobrava nenhuma)
+                $dMax = [Math]::Max(1, [Math]::Min(4, $H - 1 - ($descRow + 2 + 3) - 8))
+                foreach ($par in ("$($info.description)" -split "`n")) { if ($par.Trim()) { foreach ($l in @(Wrap-Lines $par ($lw - 4) $dMax)) { $d.Add($l) } }; if ($d.Count -ge $dMax) { break } }
                 $rr = $descRow
                 if ($d.Count) {
-                    foreach ($l in @('') + @($d | Select-Object -First 4) + @('')) { $o += "$e[$rr;${lm}H$e[48;2;44;49;58;37m  " + ($l.PadRight($lw - 4) -replace '(https?://\S+)', "$e[34m`$1$e[37m") + "  $e[0m"; $rr++ }
+                    foreach ($l in @('') + @($d | Select-Object -First $dMax) + @('')) { $o += "$e[$rr;${lm}H$e[48;2;44;49;58;37m  " + ($l.PadRight($lw - 4) -replace '(https?://\S+)', "$e[34m`$1$e[37m") + "  $e[0m"; $rr++ }
                 }
                 $comRow = $rr + 1
                 $o += "$e[$comRow;${lm}H$e[1;97mComments$e[0;90m  $(@($info.comments | Where-Object { $_ }).Count)"; $comRow += 2
