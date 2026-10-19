@@ -34,6 +34,12 @@ if (-not $Quiet) {
 # ---------- 0. checks ----------
 if ([Environment]::OSVersion.Version.Major -lt 10) { throw 'SuperTerminal needs Windows 10 or 11' }
 if (-not (Test-Path (Join-Path $Repo 'shell\profile.ps1'))) { throw "run this from the SuperTerminal folder (shell\profile.ps1 not found in $Repo)" }
+# espaco: os programas + o WezTerm + as caches precisam de ~3 GB; sem eles cada download falha a meio
+$free = (Get-PSDrive ($env:SystemDrive.TrimEnd(':'))).Free
+if (-not $SkipApps -and $free -lt 4GB) {
+    Warn ("only {0:0.0} GB free on {1}: SuperTerminal needs about 4 GB. Free some space and run this again" -f ($free / 1GB), $env:SystemDrive)
+    exit 1
+}
 $winget = Get-Command winget -ErrorAction SilentlyContinue
 if (-not $winget -and -not $SkipApps) {
     # num Windows acabado de instalar o winget (App Installer) ja la esta mas so fica registado quando a Store o
