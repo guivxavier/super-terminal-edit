@@ -36,6 +36,15 @@ if ([Environment]::OSVersion.Version.Major -lt 10) { throw 'SuperTerminal needs 
 if (-not (Test-Path (Join-Path $Repo 'shell\profile.ps1'))) { throw "run this from the SuperTerminal folder (shell\profile.ps1 not found in $Repo)" }
 $winget = Get-Command winget -ErrorAction SilentlyContinue
 if (-not $winget -and -not $SkipApps) {
+    # num Windows acabado de instalar o winget (App Installer) ja la esta mas so fica registado quando a Store o
+    # atualiza, minutos depois do 1.o login: regista-o ja
+    Info 'winget is not registered yet on this new Windows: registering it...'
+    try { Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop } catch { }
+    $env:PATH += ";$env:LOCALAPPDATA\Microsoft\WindowsApps"
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) { Good 'winget ready' }
+}
+if (-not $winget -and -not $SkipApps) {
     Warn 'winget is missing: install "App Installer" from the Microsoft Store, then run this again'
     Start-Process 'ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1'
     exit 1
