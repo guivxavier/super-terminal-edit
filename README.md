@@ -6,7 +6,15 @@ A complete terminal environment for Windows: PowerShell 7 + Windows Terminal, wi
 
 ## Install
 
-1. Get this folder on the PC (clone or download the zip).
+In PowerShell, on a clean Windows 10 / 11 (nothing needed beforehand, not even git):
+
+```powershell
+irm https://raw.githubusercontent.com/kevgoncalves/SuperTerminal/main/get.ps1 | iex
+```
+
+Or by hand:
+
+1. Get this folder on the PC (Code > Download ZIP, or clone it).
 2. Double click `install.cmd` (or `powershell -ExecutionPolicy Bypass -File install.ps1`). It installs the programs with winget, downloads WezTerm, puts the config files in place (backing up anything that was there) and adds SuperTerminal to the Start menu and Ctrl+Alt+T.
 3. Open SuperTerminal: the setup opens by itself the first time (font, Tailscale and ssh, YouTube, Stremio, logo, sudo). `setup` opens it again later.
 
