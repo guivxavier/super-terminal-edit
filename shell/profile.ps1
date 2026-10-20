@@ -1,4 +1,4 @@
-﻿# Sessoes so-de-comando (pwsh -c / -File, ex.: ssh host 'cmd') nao precisam do perfil
+# Sessoes so-de-comando (pwsh -c / -File, ex.: ssh host 'cmd') nao precisam do perfil
 # (KVN_CMD=1: modo so-comandos, usado pelo zsh do WSL para correr yt/st/get/send/rls/ssh/wake... deste perfil)
 if (-not $env:KVN_CMD -and [Environment]::GetCommandLineArgs() -match '^-(c|command|ec|encodedcommand|f|file)$') { return }
 # So dentro do SuperTerminal: o WezTerm marca as sessoes dele com SUPERTERMINAL=1 (passa tambem para o WSL e para o
@@ -1448,6 +1448,10 @@ function setup { Clear-FfRegion; $a = $args; Invoke-Zoomed { & $PwshExe -NoLogo 
 function hub([string]$Cmd) {
     $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\SuperTerminal Hub.lnk"
     $running = { @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object CommandLine -match 'st-hub\.ps1') }
+    # num ciclo (se o hub cair, volta em 5 s); arrancado pelo WMI: fica fora desta sessao (num ssh, o Windows mata o
+    # que a sessao lancou quando ela fecha)
+    $args1 = "-NoLogo -NoProfile -WindowStyle Hidden -Command `"while (`$true) { & '$HOME\.config\st-hub.ps1'; Start-Sleep 5 }`""
+    $start = { $null = Invoke-CimMethod Win32_Process -MethodName Create -Arguments @{ CommandLine = "`"$PwshExe`" $args1" } }
     switch ($Cmd) {
         'on' {
             if (-not (Get-NetFirewallRule -Name 'SuperTerminal-Hub' -ErrorAction Ignore)) {
@@ -1458,8 +1462,8 @@ function hub([string]$Cmd) {
                 try { Start-Process $PwshExe -Verb RunAs -Wait -ArgumentList '-NoProfile', '-EncodedCommand', ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))) } catch { Write-Host '  no firewall rule (if other PCs cannot open the hub, run hub on again and accept)' -ForegroundColor Yellow }
             }
             $w = New-Object -ComObject WScript.Shell; $s = $w.CreateShortcut($lnk)
-            $s.TargetPath = $PwshExe; $s.Arguments = "-NoLogo -NoProfile -WindowStyle Hidden -File `"$HOME\.config\st-hub.ps1`""; $s.WindowStyle = 7; $s.Save()
-            if (-not (& $running)) { Start-Process $PwshExe -ArgumentList '-NoLogo', '-NoProfile', '-File', "$HOME\.config\st-hub.ps1" -WindowStyle Hidden }
+            $s.TargetPath = $PwshExe; $s.Arguments = $args1; $s.WindowStyle = 7; $s.Save()
+            if (-not (& $running)) { & $start }
             Write-Host "  $([char]0xf00c) hub on this PC: http://$("$(tailscale ip -4 2>$null)".Trim())  (and hub.<your domain> if your Headscale has the DNS record)" -ForegroundColor Green
         }
         'cert' {
@@ -1502,7 +1506,7 @@ systemctl enable --now certbot.timer >/dev/null 2>&1 || true
             $sh -replace "`r", '' | wsl.exe -d $dist -u root -- bash
             if (Test-Path "$HOME\.config\superterminal\hub-cert\fullchain.pem") {
                 & $running | ForEach-Object { Stop-Process -Id $_.ProcessId }; Start-Sleep 2
-                if (Test-Path $lnk) { Start-Process $PwshExe -ArgumentList '-NoLogo', '-NoProfile', '-File', "$HOME\.config\st-hub.ps1" -WindowStyle Hidden }
+                if (Test-Path $lnk) { & $start }
                 Write-Host "  $([char]0xf00c) https://$dom  (renews by itself)" -ForegroundColor Green
             } else { Write-Host '  no certificate (see the messages above)' -ForegroundColor Red }
         }

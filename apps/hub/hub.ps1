@@ -85,47 +85,70 @@ function Get-Cert {
     }
     $script:Cert
 }
-function Send($st, [int]$code, [string]$type, [byte[]]$body, [string]$extra = '') {
-    $txt = @{ 200 = 'OK'; 301 = 'Moved Permanently'; 404 = 'Not Found' }[$code]
-    $sec = if ($script:Cert) { "Strict-Transport-Security: max-age=31536000`r`n" } else { '' }
-    $h = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $code $txt`r`nContent-Type: $type`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`n$sec$extra" + "Connection: close`r`n`r`n")
-    $st.Write($h, 0, $h.Length); $st.Write($body, 0, $body.Length); $st.Flush()
-}
-function Handle($c, [bool]$tls) {
+
+# cada ligacao e tratada num thread a parte (um browser abre ligacoes de antemao que nao mandam nada: nao podem
+# bloquear as outras); o ciclo principal so aceita e mantem $Sh (pagina, estado em JSON, certificado) atualizado
+$Sh = [hashtable]::Synchronized(@{ page = $Page; state = [byte[]]@(); cert = $null; ip = '' })
+$Serve = {
+    param($c, [bool]$tls, $Sh, [string]$Log)
+    function Send($st, [int]$code, [string]$type, [byte[]]$body, [string]$extra = '') {
+        $txt = @{ 200 = 'OK'; 301 = 'Moved Permanently'; 404 = 'Not Found' }[$code]
+        $sec = if ($Sh.cert) { "Strict-Transport-Security: max-age=31536000`r`n" } else { '' }
+        $h = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $code $txt`r`nContent-Type: $type`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`n$sec$extra" + "Connection: close`r`n`r`n")
+        $st.Write($h, 0, $h.Length); $st.Write($body, 0, $body.Length); $st.Flush()
+    }
     try {
-        $c.ReceiveTimeout = 3000; $c.SendTimeout = 3000; $st = $c.GetStream()
-        if ($tls) { $ssl = [Net.Security.SslStream]::new($st, $false); $ssl.AuthenticateAsServer($script:Cert); $st = $ssl }
+        $c.ReceiveTimeout = 10000; $c.SendTimeout = 10000; $st = $c.GetStream()
+        if ($tls) { $ssl = [Net.Security.SslStream]::new($st, $false); $ssl.AuthenticateAsServer($Sh.cert); $st = $ssl }
         $buf = [byte[]]::new(8192); $n = $st.Read($buf, 0, $buf.Length); if ($n -le 0) { return }
         $req = [Text.Encoding]::ASCII.GetString($buf, 0, $n); $path = ($req -split ' ')[1]
-        if (-not $tls -and $script:Cert) {
+        if (-not $tls -and $Sh.cert) {
             # http -> https (com o nome que o browser usou)
-            $hostName = [regex]::Match($req, '(?im)^Host:\s*([^\s:]+)').Groups[1].Value; if (-not $hostName) { $hostName = $ip }
+            $hostName = [regex]::Match($req, '(?im)^Host:\s*([^\s:]+)').Groups[1].Value; if (-not $hostName) { $hostName = $Sh.ip }
             Send $st 301 'text/plain' ([byte[]]@()) "Location: https://$hostName$path`r`n"; return
         }
         switch -Regex ($path) {
-            '^/(\?.*)?$' { Send $st 200 'text/html; charset=utf-8' $Page }
-            '^/api/state' { Send $st 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes((Get-State))) }
+            '^/(\?.*)?$' { Send $st 200 'text/html; charset=utf-8' $Sh.page }
+            '^/api/state' { Send $st 200 'application/json; charset=utf-8' $Sh.state }
             default { Send $st 404 'text/plain' ([Text.Encoding]::ASCII.GetBytes('not found')) }
         }
-    } catch { $x = $_.Exception; while ($x.InnerException) { $x = $x.InnerException }; L "request: $($x.Message)" } finally { $c.Close() }
+    } catch {
+        # (ligacoes abertas de antemao e fechadas sem pedido: normal, nao fica no log)
+        $x = $_.Exception; while ($x.InnerException) { $x = $x.InnerException }
+        if ($x.Message -notmatch 'EOF or 0 bytes|did not properly respond|forcibly closed|aborted') { try { [IO.File]::AppendAllText($Log, "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') request: $($x.Message)`n") } catch {} }
+    } finally { $c.Close() }
 }
 
-# so no IP Tailscale (espera que o Tailscale arranque, ex. no inicio da sessao)
-$ip = $null
-while (-not $ip) { $ip = "$(& $Ts ip -4 2>$null)".Trim(); if (-not $ip) { Start-Sleep 5 } }
-$addr = [Net.IPAddress]::Parse($ip)
-$null = Get-Cert
-$ls = @(@{ l = [Net.Sockets.TcpListener]::new($addr, $Port); tls = $false })
-if ($script:Cert) { $ls += @{ l = [Net.Sockets.TcpListener]::new($addr, 443); tls = $true } }
-foreach ($x in $ls) { try { $x.l.Start(); $x.acc = $x.l.AcceptTcpClientAsync() } catch { L "cannot listen on ${ip}:$($x.l.LocalEndpoint.Port) ($_)"; throw } }
-$msg = if ($script:Cert) { "hub on https://${ip} (http redirects)" } else { "hub on http://${ip}:$Port" }
-L $msg; Write-Host $msg
-$tick = [Diagnostics.Stopwatch]::StartNew()
-while ($true) {
-    Update-Srcs
-    # (de hora a hora: certificado renovado? carrega-o; um certificado novo onde nao havia -> reinicia para abrir a 443)
-    if ($tick.Elapsed.TotalMinutes -ge 60) { $tick.Restart(); $had = [bool]$script:Cert; $null = Get-Cert; if (-not $had -and $script:Cert) { L 'certificate appeared: restart'; foreach ($x in $ls) { $x.l.Stop() }; Start-Process "$PSHOME\pwsh.exe" -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "Start-Sleep 3; & '$PSCommandPath' -Port $Port"; exit } }
-    $any = $false
-    foreach ($x in $ls) { if ($x.acc.IsCompleted) { $any = $true; Handle $x.acc.Result $x.tls; $x.acc = $x.l.AcceptTcpClientAsync() } }
-    if (-not $any) { Start-Sleep -Milliseconds 100 }
-}
+try {
+    # so no IP Tailscale (espera que o Tailscale arranque, ex. no inicio da sessao)
+    $ip = $null
+    while (-not $ip) { $ip = "$(& $Ts ip -4 2>$null)".Trim(); if (-not $ip) { Start-Sleep 5 } }
+    $Sh.ip = $ip; $addr = [Net.IPAddress]::Parse($ip)
+    $Sh.cert = Get-Cert
+    $ls = @(@{ l = [Net.Sockets.TcpListener]::new($addr, $Port); tls = $false })
+    if ($Sh.cert) { $ls += @{ l = [Net.Sockets.TcpListener]::new($addr, 443); tls = $true } }
+    foreach ($x in $ls) { $x.l.Start(); $x.acc = $x.l.AcceptTcpClientAsync() }
+    $msg = if ($Sh.cert) { "hub on https://${ip} (http redirects)" } else { "hub on http://${ip}:$Port" }
+    L $msg; Write-Host $msg
+    $tick = [Diagnostics.Stopwatch]::StartNew(); $st1 = [Diagnostics.Stopwatch]::StartNew(); $Sh.state = [Text.Encoding]::UTF8.GetBytes((Get-State))
+    while ($true) {
+        Update-Srcs
+        if ($st1.ElapsedMilliseconds -ge 1000) {
+            $st1.Restart(); $Sh.state = [Text.Encoding]::UTF8.GetBytes((Get-State))
+            Get-Job -Name hub-req -ErrorAction Ignore | Where-Object State -ne 'Running' | Remove-Job -Force
+        }
+        # (de hora a hora: certificado renovado? carrega-o; um certificado onde nao havia -> sai, e o ciclo de quem o
+        # arrancou (hub on) volta a abri-lo ja com a 443)
+        if ($tick.Elapsed.TotalMinutes -ge 60) { $tick.Restart(); $had = [bool]$Sh.cert; $Sh.cert = Get-Cert; if (-not $had -and $Sh.cert) { L 'certificate appeared: restart'; break } }
+        $any = $false
+        foreach ($x in $ls) {
+            if ($x.acc.IsCompleted) {
+                $any = $true
+                if ($x.acc.IsFaulted) { L "accept: $($x.acc.Exception.InnerException.Message)" } else { $null = Start-ThreadJob -Name hub-req -ThrottleLimit 32 -ScriptBlock $Serve -ArgumentList $x.acc.Result, $x.tls, $Sh, $Log }
+                $x.acc = $x.l.AcceptTcpClientAsync()
+            }
+        }
+        if (-not $any) { Start-Sleep -Milliseconds 50 }
+    }
+} catch { L "fatal: $($_.Exception.Message) @ L$($_.InvocationInfo.ScriptLineNumber)"; throw }
+finally { foreach ($x in $ls) { try { $x.l.Stop() } catch {} }; foreach ($s in $Srcs.Values) { if ($s.p -and -not $s.p.HasExited) { try { $s.p.Kill() } catch {} } } }
