@@ -945,7 +945,7 @@ $Steps = [ordered]@{
         check = { $d = Get-Distro; if (-not $d) { @{ ok = $false; text = 'not installed (optional)' } } elseif ("$(Invoke-Wsl 'grep -q kvn.zshrc ~/.zshrc && echo y')".Trim() -eq 'y') { @{ ok = $true; text = $d } } else { @{ ok = $false; text = "$d · not linked yet" } } } }
     widgets = @{ icon = [char]0xf009; name = 'Header widgets'; run = { Edit-Widgets }
         check = { $on = @((Get-Widgets).enabled); @{ ok = $true; text = $(if ($on) { $on -join ', ' } else { 'none (optional)' }) } } }
-    keys = @{ icon = [char]0xf11c; name = 'Shortcuts'; run = { Edit-Keys }
+    shortcuts = @{ icon = [char]0xf11c; name = 'Shortcuts'; run = { Edit-Keys }
         check = { $n = (Get-Keys).Count; @{ ok = $true; text = $(if ($n) { "$n changed" } else { 'defaults' }) } } }
     sudo = @{ icon = [char]0xf132; name = 'sudo'; run = { Show-Guide $SudoPage }
         check = {
@@ -954,7 +954,7 @@ $Steps = [ordered]@{
         } }
 }
 function Show-Menu {
-    $keys = @($Steps.Keys); $sel = 0; $st = @{}
+    $keys = @($Steps.PSBase.Keys); $sel = 0; $st = @{}
     foreach ($k in $keys) { $st[$k] = try { & $Steps[$k].check } catch { @{ ok = $false; text = "$_" } } }
     while ($true) {
         Title ([char]0xf120) 'SuperTerminal setup'
@@ -981,7 +981,7 @@ function Show-Menu {
 if ($env:SUPERTERMINAL_SETUP_TEST) { return }   # (testes: so as funcoes)
 [Console]::Write("$e[?1049h$e[?25l")
 try {
-    if ($Step) { if ($Steps.Contains($Step)) { & $Steps[$Step].run } else { Say "no step '$Step' (steps: $($Steps.Keys -join ', '))" '31'; Pause-Key } }
+    if ($Step) { if ($Steps.Contains($Step)) { & $Steps[$Step].run } else { Say "no step '$Step' (steps: $($Steps.PSBase.Keys -join ', '))" '31'; Pause-Key } }
     else { Show-Menu }
     # (so depois de sair do menu: se a janela fechou antes de ser vista - WezTerm a falhar, janela escondida - o
     # perfil volta a abrir o setup da proxima vez)

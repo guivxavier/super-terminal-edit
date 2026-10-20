@@ -28,7 +28,7 @@ Goal: a colleague runs one command on a clean Windows and gets the same terminal
   - [x] sudo (Windows 11 setting, inline / gsudo on Windows 10);
   - [x] WSL (optional): install WSL + Ubuntu, create the Linux user, then zsh + tools and guarded lines in `.bashrc` / `.zshrc` (outside SuperTerminal WSL stays as it was).
 - [x] **Draw your own ASCII art** (Kev's request): an editor in the terminal to draw the header logo (grid with mouse/keys, colours from the theme, preview in the header), saved to the per-person config. Also importing an image (chafa) or text (figlet-style).
-- [x] **Change keybinds** (Kev's request): `setup keys` lists the terminal's shortcuts; a new one is set by pressing it (WezTerm lets go of every key while the editor waits), conflicts are refused; saved to `~\.config\superterminal\keys.json`, read by `wezterm.lua`. Still to do: PSReadLine and yt/st keys.
+- [x] **Change keybinds** (Kev's request): `setup shortcuts` lists the terminal's shortcuts; a new one is set by pressing it (WezTerm lets go of every key while the editor waits), conflicts are refused; saved to `~\.config\superterminal\keys.json`, read by `wezterm.lua`. Still to do: PSReadLine and yt/st keys.
 
 ## Extras (Kev's request)
 - [x] **Command palette** (Ctrl+P): commands, apps, recent folders (zoxide), PCs and setup steps in WezTerm's fuzzy selector; enter runs it in the shell. Inside micro / hx / lazygit Ctrl+P stays theirs.

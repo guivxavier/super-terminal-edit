@@ -291,7 +291,7 @@ local PALETTE_CMDS = {
   { 'monitor', 'CPU, GPU, RAM of your PCs' }, { 'super status', 'up to date?' }, { 'super upgrade', 'latest version from GitHub' },
   { 'super sync', 'update every PC' }, { 'lg', 'lazygit' }, { 'reset', 'fix a broken terminal' }, { 'ff', 'clear' },
 }
-local SETUP_STEPS = { 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'keys', 'widgets', 'sudo' }
+local SETUP_STEPS = { 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'shortcuts', 'widgets', 'sudo' }
 -- atalho do terminal so quando o painel esta num shell; dentro de um programa (micro, hx, lazygit...) a tecla e dele
 -- (ex.: Ctrl+Q sai do micro). O ssh conta como shell: do outro lado esta um prompt.
 local SHELLS = { ['pwsh.exe'] = true, ['powershell.exe'] = true, ['cmd.exe'] = true, ['wsl.exe'] = true, ['wslhost.exe'] = true, zsh = true, bash = true, ['ssh.exe'] = true }
