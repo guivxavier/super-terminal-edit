@@ -268,6 +268,50 @@ local function new_tab(window, pane)
   add_header(p)
 end
 
+-- ---- Ctrl+P: command palette (comandos, apps, pastas recentes, PCs, setup); enter escreve-o no shell e corre ----
+local function read_json(path)
+  local f = io.open(path, 'r'); if not f then return nil end
+  local s = f:read('*a'); f:close()
+  local ok, t = pcall(wezterm.json_parse, s); if ok then return t end
+end
+local PALETTE_CMDS = {
+  { 'yt', 'YouTube' }, { 'st', 'Stremio' }, { 'setup', 'SuperTerminal setup' }, { 'theme', 'change the colours' },
+  { 'monitor', 'CPU, GPU, RAM of your PCs' }, { 'super status', 'up to date?' }, { 'super upgrade', 'latest version from GitHub' },
+  { 'super sync', 'update every PC' }, { 'lg', 'lazygit' }, { 'reset', 'fix a broken terminal' }, { 'ff', 'clear' },
+}
+local SETUP_STEPS = { 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'keys', 'widgets', 'sudo' }
+local function palette(window, pane)
+  local fg = (pane:get_foreground_process_name() or ''):lower():match('[^\\/]+$') or ''
+  local is_pwsh = fg == 'pwsh.exe' or fg == 'powershell.exe'
+  local is_sh = is_pwsh or fg == 'wsl.exe' or fg == 'wslhost.exe' or fg == 'zsh' or fg == 'bash'
+  -- dentro de um programa (micro, hx, lazygit, ssh...) o Ctrl+P e dele
+  if not is_sh then window:perform_action(act.SendKey { key = 'p', mods = 'CTRL' }, pane); return end
+  local choices = {}
+  local function add(kind, label, cmd) table.insert(choices, { id = cmd, label = kind .. '  ' .. label }) end
+  for _, c in ipairs(PALETTE_CMDS) do add('\u{f120}', c[1] .. '   ' .. c[2], c[1]) end
+  for name, _ in pairs(read_json(wezterm.home_dir .. '\\.config\\apps.json') or {}) do add('\u{f2d0}', name .. '   app', 'app ' .. name) end
+  local me = wezterm.hostname():lower()
+  for _, p in ipairs(read_json(wezterm.home_dir .. '\\.config\\superterminal\\pcs.json') or {}) do
+    if p.name and (p.host or ''):lower() ~= me then add('\u{f108}', 'ssh ' .. p.name, 'ssh ' .. p.name) end
+  end
+  if is_pwsh then
+    local ok, out = pcall(function() local s, o = wezterm.run_child_process { 'zoxide', 'query', '-l' }; return s and o end)
+    if ok and out then
+      local n = 0
+      for d in out:gmatch('[^\r\n]+') do n = n + 1; if n > 20 then break end; add('\u{f07b}', d, "cd '" .. d:gsub("'", "''") .. "'") end
+    end
+  end
+  for _, s in ipairs(SETUP_STEPS) do add('\u{f013}', 'setup ' .. s, 'setup ' .. s) end
+  window:perform_action(act.InputSelector {
+    title = 'SuperTerminal', fuzzy = true, fuzzy_description = '\u{f002}  ', choices = choices,
+    action = wezterm.action_callback(function(w, p, id)
+      if not id then return end
+      -- limpa o que estiver escrito (pwsh: esc; zsh/bash: ctrl+u) e corre
+      p:send_text((is_pwsh and '\x1b' or '\x15') .. id .. '\r')
+    end),
+  }, pane)
+end
+
 -- cada atalho tem um nome; o setup > Shortcuts muda-os em ~\.config\superterminal\keys.json ({"new_tab": "CTRL+SHIFT+t"})
 local actions = {
   { 'new_tab', 'CTRL+t', wezterm.action_callback(new_tab) },
@@ -293,6 +337,7 @@ local actions = {
   { 'pane_right', 'CTRL+RightArrow', act.ActivatePaneDirection 'Right' },
   { 'pane_up', 'CTRL+UpArrow', act.ActivatePaneDirection 'Up' },
   { 'pane_down', 'CTRL+DownArrow', act.ActivatePaneDirection 'Down' },
+  { 'palette', 'CTRL+p', wezterm.action_callback(palette) },
 }
 local KEYS_FILE = wezterm.home_dir .. '\\.config\\superterminal\\keys.json'
 local EDITING = wezterm.home_dir .. '\\.config\\superterminal\\keys-editing'
