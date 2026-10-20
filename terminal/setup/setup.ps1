@@ -551,6 +551,16 @@ function New-StremioPage([bool]$rd) {
         }
     }
     $steps += $boot, $aio
+    if (-not $rd) {
+        # sem debrid os addons dao torrents: o Stremio Service (o servidor do Stremio) passa-os ao mpv; o st arranca-o
+        $steps += @{ t = 'Stremio Service (plays torrents)'
+            d = @('i  installs it with winget. Without debrid most streams are torrents: st starts the service by itself when you play one.',
+                'Torrents download from (and upload to) other people while you watch.')
+            done = { [bool]@(foreach ($d in "$env:LOCALAPPDATA\Programs", $env:ProgramFiles) { if ($d) { Get-ChildItem $d -Filter 'stremio-service.exe' -Recurse -Depth 2 -ErrorAction Ignore } }) }; every = 10
+            info = { "$e[90mfew results? t adds Torrentio (configure it without a debrid service, then Install)" }
+            acts = @(@('i', 'install', { winget install -e --id Stremio.StremioService --accept-source-agreements --accept-package-agreements; Pause-Key }), @('t', 'add Torrentio', { Open-Url 'https://torrentio.strem.fun/configure' }))
+        }
+    }
     @{
         icon = [char]0xf26c; title = "Stremio (st) · $(if ($rd) { 'with Real-Debrid' } else { 'without debrid' })"
         intro = @('st shows the catalogs and streams of the addons on your Stremio account.')
