@@ -56,20 +56,14 @@ config.tab_bar_at_bottom = true
 config.show_new_tab_button_in_tab_bar = false
 config.inactive_pane_hsb = { saturation = 1.0, brightness = 1.0 }   -- (o cabecalho nunca tem foco: nao o escurecer)
 -- OpenGL: com WebGpu a janela demorava a aparecer depois de escondida (Ctrl+Alt+T); OpenGL pinta em ~10 ms
--- Sem placa grafica a serio (VM sem aceleracao, PC sem drivers: so o "Microsoft Basic Render Driver") nao ha OpenGL e
--- o WezTerm fechava logo ao abrir: ai desenha por software. Visto uma vez por arranque (wezterm.GLOBAL)
+-- Sem placa grafica a serio (VM, PC sem drivers) nao ha OpenGL e o WezTerm fechava logo ao abrir ("OpenGL implementation
+-- is too old"): o instalador ve isso no Windows e escreve "Software" em ~\.config\superterminal\front_end.txt
 local function pick_front_end()
-  if wezterm.GLOBAL.front_end then return wezterm.GLOBAL.front_end end
-  local fe = 'OpenGL'
-  local ok, gpus = pcall(function() return wezterm.gui.enumerate_gpus() end)
-  if ok and gpus and #gpus > 0 then
-    fe = 'Software'
-    for _, g in ipairs(gpus) do
-      if g.device_type == 'DiscreteGpu' or g.device_type == 'IntegratedGpu' then fe = 'OpenGL' end
-    end
-  end
-  wezterm.GLOBAL.front_end = fe
-  return fe
+  local f = io.open(wezterm.home_dir .. '\\.config\\superterminal\\front_end.txt', 'r')
+  if not f then return 'OpenGL' end
+  local v = (f:read('*l') or ''):match('^%s*(%a+)%s*$'); f:close()
+  if v == 'Software' or v == 'WebGpu' or v == 'OpenGL' then return v end
+  return 'OpenGL'
 end
 config.front_end = pick_front_end()
 config.window_close_confirmation = 'NeverPrompt'

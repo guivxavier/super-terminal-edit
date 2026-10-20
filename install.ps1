@@ -190,6 +190,13 @@ foreach ($m in $Map) {
     Copy-Item $src $dst -Force
 }
 foreach ($d in "$Cfg\cmds", "$Cfg\superterminal", "$Local\superterminal") { New-Item -ItemType Directory $d -Force | Out-Null }
+# placa grafica: sem uma a serio (VM, "Basic Display Adapter", PC sem drivers) nao ha OpenGL e o WezTerm nao abre;
+# ai desenha por software (o wezterm.lua le este ficheiro). Com placa, o ficheiro sai e fica o OpenGL
+$gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name)" })
+$realGpu = @($gpus | Where-Object { $_ -match 'NVIDIA|AMD|Radeon|Intel|Qualcomm|Adreno|Arc' }).Count -gt 0
+$feFile = "$Cfg\superterminal\front_end.txt"
+if ($realGpu) { Remove-Item $feFile -ErrorAction SilentlyContinue }
+else { Set-Content $feFile 'Software'; Info "no graphics card with OpenGL ($($gpus -join ', ')): the terminal draws in software" }
 Good "$changed of $($Map.Count) files updated"
 if ($backedUp) { Info "$backedUp files that were there are saved in $Backup" }
 # helix le a config de %APPDATA%\helix: uma juncao para ~\.config\helix (so se ainda nao existir)
