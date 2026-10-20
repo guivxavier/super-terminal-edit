@@ -14,7 +14,7 @@ while ($true) {
     $procs = @(Get-CimInstance Win32_PerfFormattedData_PerfProc_Process -Filter "Name<>'_Total' AND Name<>'Idle'" |
         Group-Object { $_.Name -replace '#\d+$' } | ForEach-Object { [pscustomobject]@{ n = $_.Name; c = [Math]::Round(($_.Group | Measure-Object PercentProcessorTime -Sum).Sum / $cores, 1); m = [long](($_.Group | Measure-Object WorkingSetPrivate -Sum).Sum) } } |
         Sort-Object c, m -Descending | Select-Object -First 8)
-    # (quem le fechou - monitor / hub terminou, ssh caiu: sai em vez de ficar a correr)
+    # (quem le fechou - o monitor terminou, ssh caiu: sai em vez de ficar a correr)
     try { [Console]::Out.WriteLine((@{ host = $env:COMPUTERNAME.ToLower(); cpu = $cpu; gpu = $gpu; temp = $temp; ramUsed = [long]$ramTotal - [long]$os.FreePhysicalMemory * 1024; ramTotal = [long]$ramTotal
                 cpuName = $cpuName; gpuName = $gpuName; up = [int]((Get-Date) - $os.LastBootUpTime).TotalHours; procs = $procs } | ConvertTo-Json -Compress -Depth 3))
     [Console]::Out.Flush() } catch { break }
