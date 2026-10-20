@@ -9,7 +9,8 @@
 # Runs on Windows PowerShell 5.1 (what a new PC has), so this file is ASCII only and uses no PowerShell 7 syntax.
 #   -SkipApps  no winget (what "sync" uses to apply a new version: only the files)
 #   -Quiet     only the summary line
-param([switch]$SkipApps, [switch]$Quiet)
+#   -Previous  the commit applied before (super upgrade passes it): files that changed on this PC since then are kept
+param([switch]$SkipApps, [switch]$Quiet, [string]$Previous)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -164,10 +165,11 @@ $Map = @(
 )
 # (pessoais: so se ainda nao existirem - o logo e as colunas do cabecalho de cada PC ficam)
 $KeepIfThere = @('config\fastfetch\config.jsonc', 'config\fastfetch\config-hw.jsonc', 'config\fastfetch\config-live.jsonc')
-# numa atualizacao (-SkipApps, pelo "super upgrade"): um ficheiro que ja nao e igual a versao aplicada antes foi
-# mudado neste PC -> fica, e a versao nova vai para <ficheiro>.new (a anterior esta no historico da copia: HEAD@{1})
+# numa atualizacao (o "super upgrade" passa -Previous = a versao que aplicou da ultima vez): um ficheiro que ja nao e
+# igual a essa versao foi mudado neste PC -> fica, e a nova vai para <ficheiro>.new. Sem versao anterior conhecida
+# (1.o upgrade depois de instalar pelo zip) nao ha com que comparar: atualiza (com copia de seguranca)
 $Prev = $null
-if ($SkipApps -and (Get-Command git -ErrorAction SilentlyContinue)) { $Prev = "$(& git -C $Repo rev-parse -q --verify 'HEAD@{1}' 2>$null)".Trim() }
+if ($Previous -and (Get-Command git -ErrorAction SilentlyContinue)) { $Prev = "$(& git -C $Repo rev-parse -q --verify "$Previous^{commit}" 2>$null)".Trim() }
 $backedUp = 0; $changed = 0; $kept = @()
 foreach ($m in $Map) {
     $src = Join-Path $Repo $m[0]; $dst = $m[1]

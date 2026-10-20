@@ -1157,7 +1157,8 @@ function Update-SuperTerminal {
     $after = "$(git -C $StRepo rev-parse HEAD)"; $short = $after.Substring(0, 7)
     if ($before -eq $after) { & $say "  `e[32m$([char]0x2713)`e[0m already on the latest version `e[90m($short)`e[0m"; return $true }
     $n = if ($before) { "$(git -C $StRepo rev-list --count "$before..$after") new changes" } else { 'first version' }
-    $r = "$(& $PwshExe -NoProfile -ExecutionPolicy Bypass -File "$StRepo\install.ps1" -SkipApps -Quiet 2>&1 | Select-Object -Last 1)".Trim()
+    $ia = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$StRepo\install.ps1", '-SkipApps', '-Quiet') + $(if ($before) { '-Previous', $before } else { @() })
+    $r = "$(& $PwshExe @ia 2>&1 | Select-Object -Last 1)".Trim()
     if ($r -match '^applied:') { Set-Content "$StRepo\..\applied.txt" $after }
     & $say "  `e[32m$([char]0x2193)`e[0m updated to $short `e[90m($n; $r)`e[0m$(if ($r -notmatch '^applied: 0 ') { "`n  `e[90mopen a new tab to use it`e[0m" })"
     $true
