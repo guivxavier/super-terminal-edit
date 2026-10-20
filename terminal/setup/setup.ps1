@@ -768,8 +768,10 @@ function Show-Menu {
 if ($env:SUPERTERMINAL_SETUP_TEST) { return }   # (testes: so as funcoes)
 [Console]::Write("$e[?1049h$e[?25l")
 try {
-    Set-Content "$StCfg\setup-seen" (Get-Date -Format s)   # (o perfil so abre o setup sozinho na 1.a vez)
     if ($Step) { if ($Steps.Contains($Step)) { & $Steps[$Step].run } else { Say "no step '$Step' (steps: $($Steps.Keys -join ', '))" '31'; Pause-Key } }
     else { Show-Menu }
+    # (so depois de sair do menu: se a janela fechou antes de ser vista - WezTerm a falhar, janela escondida - o
+    # perfil volta a abrir o setup da proxima vez)
+    Set-Content "$StCfg\setup-seen" (Get-Date -Format s)
 }
 finally { [Console]::Write("$e[0m$e[?25h$e[?1049l") }
