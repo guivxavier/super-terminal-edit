@@ -1442,7 +1442,40 @@ function st { if (Open-InTab 'st' (@($PwshExe, '-NoLogo', '-File', "$HOME\.confi
 
 # ---- setup: contas e escolhas (fonte, Tailscale, YouTube, Stremio, logo, sudo) -> ~\.config\superterminal-setup.ps1 ----
 function setup { Clear-FfRegion; $a = $args; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\superterminal-setup.ps1" @a } }
-function monitor { Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\st-monitor.ps1" } }   # CPU, GPU, RAM, temperatura e processos dos teus PCs
+# hub: pagina web dos teus PCs, so dentro da tailnet (st-hub.ps1 ouve no IP Tailscale deste PC)
+#   hub        -> abre a pagina          hub on  -> este PC passa a servir o hub (arranca com a sessao; pede admin 1x p/ a firewall)
+#   hub off    -> deixa de o servir      hub status
+function hub([string]$Cmd) {
+    $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\SuperTerminal Hub.lnk"
+    $running = { @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object CommandLine -match 'st-hub\.ps1') }
+    switch ($Cmd) {
+        'on' {
+            if (-not (Get-NetFirewallRule -Name 'SuperTerminal-Hub' -ErrorAction Ignore)) {
+                # so a partir da tailnet (100.64.0.0/10), porta 80
+                $ps = "New-NetFirewallRule -Name 'SuperTerminal-Hub' -DisplayName 'SuperTerminal Hub (tailnet only)' -Direction Inbound -Protocol TCP -LocalPort 80 -RemoteAddress 100.64.0.0/10 -Action Allow | Out-Null"
+                Write-Host '  Windows asks for admin once: the firewall rule (port 80, only from the tailnet)' -ForegroundColor DarkGray
+                try { Start-Process $PwshExe -Verb RunAs -Wait -ArgumentList '-NoProfile', '-EncodedCommand', ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))) } catch { Write-Host '  cancelled' -ForegroundColor Yellow; return }
+            }
+            $w = New-Object -ComObject WScript.Shell; $s = $w.CreateShortcut($lnk)
+            $s.TargetPath = $PwshExe; $s.Arguments = "-NoLogo -NoProfile -WindowStyle Hidden -File `"$HOME\.config\st-hub.ps1`""; $s.WindowStyle = 7; $s.Save()
+            if (-not (& $running)) { Start-Process $PwshExe -ArgumentList '-NoLogo', '-NoProfile', '-File', "$HOME\.config\st-hub.ps1" -WindowStyle Hidden }
+            Write-Host "  $([char]0xf00c) hub on this PC: http://$("$(tailscale ip -4 2>$null)".Trim())  (and hub.<your domain> if your Headscale has the DNS record)" -ForegroundColor Green
+        }
+        'off' { Remove-Item $lnk -ErrorAction Ignore; & $running | ForEach-Object { Stop-Process -Id $_.ProcessId }; Write-Host '  hub off on this PC' -ForegroundColor Green }
+        'status' { if (& $running) { Write-Host "  running here$(if (Test-Path $lnk) { ', starts with the session' })" -ForegroundColor Green } else { Write-Host "  not running here$(if (Test-Path $lnk) { ' (starts with the session)' })" -ForegroundColor DarkGray } }
+        default {
+            # endereco: ~\.config\superterminal\hub-url.txt, ou hub.<dominio> do Headscale (tailnet vpn.exemplo.com -> hub.exemplo.com)
+            $f = "$HOME\.config\superterminal\hub-url.txt"
+            $u = if (Test-Path $f) { "$(Get-Content $f)".Trim() } else {
+                $tn = try { (tailscale status --json 2>$null | ConvertFrom-Json).CurrentTailnet.Name } catch { '' }
+                if ($tn -match '^[^@\s]+\.[^@\s]+\.[a-z]+$' -and $tn -notmatch '\.ts\.net$') { "http://hub.$($tn -replace '^[^.]+\.')" }
+            }
+            if ($u) { Start-Process $u } else { Write-Host "  no hub address: run hub on on the PC that serves it, then write its http://<tailscale ip> to $f" -ForegroundColor Yellow }
+        }
+    }
+}
+Register-ArgumentCompleter -CommandName hub -ParameterName Cmd -ScriptBlock { param($c, $p, $w) 'on', 'off', 'status' | Where-Object { $_ -like "$w*" } }
+function monitor {Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\st-monitor.ps1" } }   # CPU, GPU, RAM, temperatura e processos dos teus PCs
 Register-ArgumentCompleter -CommandName setup -ScriptBlock { param($c, $p, $w) 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'keys', 'widgets', 'sudo' | Where-Object { $_ -like "$w*" } }
 # ---- app: lancador de apps ----
 #   app            -> escolher com fzf        app <nome>      -> abrir

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuperTerminal Hub</title>
+<style>
+  :root {
+    --bg: #282C34; --dark: #21252B; --surf: #2C313A; --sel: #3E4451; --line: #4B5263; --comment: #5C6370;
+    --fg: #ABB2BF; --white: #FFFFFF; --red: #E06C75; --green: #98C379; --yellow: #E5C07B; --blue: #61AFEF; --magenta: #C678DD; --cyan: #56B6C2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body { font: 14px/1.5 "Cascadia Mono", "CaskaydiaMono Nerd Font", "JetBrains Mono", ui-monospace, Consolas, monospace; padding: 28px 16px 48px; }
+  main { max-width: 1240px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 26px; }
+  h1 { margin: 0; font-size: 20px; color: var(--white); letter-spacing: .02em; }
+  h1 b { color: var(--blue); }
+  .muted { color: var(--comment); }
+  .pill { background: var(--sel); color: var(--fg); padding: 1px 8px; border-radius: 4px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--comment); margin-right: 6px; vertical-align: 1px; }
+  .dot.on { background: var(--green); box-shadow: 0 0 8px color-mix(in srgb, var(--green) 60%, transparent); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--comment); margin: 34px 0 12px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+  .card { background: var(--surf); border: 1px solid var(--sel); border-radius: 10px; padding: 18px 18px 14px; min-width: 0; }
+  .card.self { border-color: color-mix(in srgb, var(--blue) 55%, var(--sel)); }
+  .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .name { font-size: 17px; color: var(--white); font-weight: 700; }
+  .sub { color: var(--comment); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 2px 0 14px; }
+  .row { display: grid; grid-template-columns: 44px 1fr 52px; align-items: center; gap: 10px; margin: 7px 0; }
+  .lbl { color: var(--fg); font-size: 12px; }
+  .val { text-align: right; color: var(--white); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; background: var(--sel); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; background: var(--green); transition: width .6s ease; }
+  .bar i.mid { background: var(--yellow); } .bar i.hi { background: var(--red); }
+  .note { color: var(--comment); font-size: 12px; margin: -3px 0 6px 54px; }
+  svg.spark { width: 100%; height: 34px; display: block; margin: 4px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; table-layout: fixed; }
+  th { text-align: left; color: var(--comment); font-weight: 400; padding: 3px 0; border-bottom: 1px solid var(--sel); }
+  td { padding: 3px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  th.n, td.n { text-align: right; width: 70px; font-variant-numeric: tabular-nums; }
+  .err { color: var(--yellow); margin: 18px 0 8px; }
+  .wait { color: var(--comment); margin: 18px 0 8px; }
+  .nodes { background: var(--surf); border: 1px solid var(--sel); border-radius: 10px; overflow: hidden; }
+  .node { display: grid; grid-template-columns: 1fr 90px 140px 90px; gap: 10px; padding: 9px 16px; border-top: 1px solid var(--sel); align-items: center; }
+  .node:first-child { border-top: 0; }
+  .node .h { color: var(--white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node.off .h { color: var(--comment); }
+  .here { color: var(--cyan); margin-left: 6px; }
+  footer { margin-top: 30px; color: var(--comment); font-size: 12px; }
+  @media (max-width: 560px) {
+    .grid { grid-template-columns: 1fr; }
+    .node { grid-template-columns: 1fr 70px; }
+    .node .ip, .node .os { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><b>&gt;_</b> SuperTerminal Hub</h1>
+    <span class="pill" id="tailnet">…</span>
+    <span class="muted" id="summary"></span>
+  </header>
+  <h2>PCs</h2>
+  <div class="grid" id="pcs"><div class="wait">connecting…</div></div>
+  <h2>Tailnet</h2>
+  <div class="nodes" id="nodes"></div>
+  <footer id="foot">only reachable inside your tailnet · updates every 2 s</footer>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const gb = b => b >= 1073741824 ? (b / 1073741824).toFixed(1) + ' GB' : Math.round(b / 1048576) + ' MB';
+const lvl = v => v >= 85 ? 'hi' : v >= 60 ? 'mid' : '';
+const bar = (label, v, text) => `<div class="row"><span class="lbl">${label}</span><div class="bar"><i class="${lvl(v)}" style="width:${Math.max(0, Math.min(100, v))}%"></i></div><span class="val">${text ?? Math.round(v) + '%'}</span></div>`;
+function spark(h) {
+  if (!h || h.length < 2) return '';
+  const w = 300, ht = 34, n = h.length, step = w / Math.max(1, 59);
+  const pts = h.map((v, i) => `${(w - (n - 1 - i) * step).toFixed(1)},${(ht - 2 - Math.min(100, v) / 100 * (ht - 4)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${ht}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="var(--blue)" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+}
+function card(p) {
+  const d = p.d, icon = /lap|book|note/i.test(p.name) ? '💻' : '🖥️';
+  let body;
+  if (!d) body = p.err ? `<div class="err">⚠ ${esc(p.err)}</div>` : `<div class="wait">connecting…</div>`;
+  else {
+    const rp = d.ramTotal ? 100 * d.ramUsed / d.ramTotal : 0;
+    const up = d.up >= 48 ? Math.floor(d.up / 24) + 'd' : d.up + 'h';
+    body = `<div class="sub">${esc(d.cpuName)}${d.gpuName ? ' · ' + esc(d.gpuName) : ''} · up ${up}</div>`
+      + bar('CPU', d.cpu) + spark(p.hist)
+      + (d.gpu != null ? bar('GPU', d.gpu) : '')
+      + bar('RAM', rp) + `<div class="note">${gb(d.ramUsed)} of ${gb(d.ramTotal)}</div>`
+      + (d.temp != null ? bar('TEMP', d.temp, Math.round(d.temp) + '°C') : '')
+      + `<table><tr><th>process</th><th class="n">cpu</th><th class="n">mem</th></tr>`
+      + (d.procs || []).slice(0, 6).map(x => `<tr><td>${esc(x.n)}</td><td class="n">${x.c.toFixed(1)}%</td><td class="n">${gb(x.m)}</td></tr>`).join('') + `</table>`;
+  }
+  const state = d && !p.stale ? '<span class="dot on"></span>online' : (p.err ? '<span class="dot"></span>offline' : '<span class="dot"></span>…');
+  return `<div class="card${p.self ? ' self' : ''}"><div class="top"><span class="name">${icon} ${esc(p.name)}</span><span class="muted">${state}${p.self ? ' · hub' : ''}</span></div>${body}</div>`;
+}
+function applyTheme(t) {
+  if (!t) return;
+  for (const k of ['bg', 'dark', 'surf', 'sel', 'line', 'comment', 'fg', 'white', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan'])
+    if (/^#[0-9a-f]{6}$/i.test(t[k] || '')) document.documentElement.style.setProperty('--' + k, t[k]);
+}
+async function tick() {
+  try {
+    const s = await (await fetch('/api/state', { cache: 'no-store' })).json();
+    applyTheme(s.theme);
+    $('pcs').innerHTML = (s.pcs || []).map(card).join('');
+    const nodes = (s.tailnet && s.tailnet.nodes) || [];
+    $('tailnet').textContent = (s.tailnet && s.tailnet.name) || 'tailnet';
+    $('summary').textContent = `${nodes.filter(n => n.online).length}/${nodes.length} online`;
+    $('nodes').innerHTML = nodes.sort((a, b) => b.online - a.online || a.host.localeCompare(b.host)).map(n =>
+      `<div class="node${n.online ? '' : ' off'}"><span class="h">${esc(n.host)}${n.self ? '<span class="here">← hub</span>' : ''}</span><span>${n.online ? '<span class="dot on"></span>online' : '<span class="dot"></span>offline'}</span><span class="ip muted">${esc(n.ip)}</span><span class="os muted">${esc(n.os)}</span></div>`).join('');
+    $('foot').textContent = `only reachable inside your tailnet · updated ${new Date(s.time).toLocaleTimeString()}`;
+  } catch (e) { $('foot').textContent = 'hub not answering…'; }
+}
+tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>
