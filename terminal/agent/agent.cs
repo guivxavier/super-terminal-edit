@@ -25,6 +25,11 @@ static class Agent {
     [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
     [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
     [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int val, int size);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h, uint cmd);
+    [DllImport("user32.dll")] static extern IntPtr GetShellWindow();
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
+    [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr w, l; public uint time; public int x, y; }
 
@@ -46,13 +51,38 @@ static class Agent {
     // sem a animacao (fade) do Windows ao mostrar / esconder: o atalho fica instantaneo
     static void NoAnim(IntPtr h) { int on = 1; DwmSetWindowAttribute(h, 3, ref on, 4); }   // DWMWA_TRANSITIONS_FORCEDISABLED
 
+    // a janela que estava a frente antes de o terminal aparecer: recebe o foco quando ele se esconde
+    static IntPtr Prev = IntPtr.Zero;
+
+    static void Focus(IntPtr t) {
+        // (o Windows so deixa dar o foco a quem o tem: junta-se a fila de entrada da janela da frente)
+        uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero), me = GetCurrentThreadId();
+        AttachThreadInput(me, fg, true); SetForegroundWindow(t); AttachThreadInput(me, fg, false);
+    }
+
+    // a proxima janela "normal" visivel por baixo (com titulo, sem ser janela de ferramentas)
+    static IntPtr Below(IntPtr h) {
+        for (IntPtr w = GetWindow(h, 2); w != IntPtr.Zero; w = GetWindow(w, 2))   // GW_HWNDNEXT
+            if (IsWindowVisible(w) && !IsIconic(w) && GetWindowTextLength(w) > 0 && (GetWindowLong(w, -20) & 0x80) == 0) return w;   // GWL_EXSTYLE / WS_EX_TOOLWINDOW
+        return IntPtr.Zero;
+    }
+
+    // esconde e entrega o foco: sem isto o Windows fica sem janela ativa e, nalguns PCs, o ecra so se redesenha
+    // (e deixa de mostrar o terminal) depois de um clique
+    static void Hide(IntPtr h) {
+        IntPtr next = Below(h);
+        NoAnim(h); ShowWindow(h, SW_HIDE);
+        IntPtr t = (Prev != IntPtr.Zero && Prev != h && IsWindow(Prev) && IsWindowVisible(Prev) && !IsIconic(Prev)) ? Prev : next;
+        if (t == IntPtr.Zero) t = GetShellWindow();   // (nada aberto: o ambiente de trabalho)
+        if (t != IntPtr.Zero) Focus(t);
+    }
+
     static void Front(IntPtr h) {
+        IntPtr f = GetForegroundWindow(); if (f != h && f != IntPtr.Zero) Prev = f;
         NoAnim(h);
         ShowWindow(h, SW_SHOW);
         if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
-        // (o Windows so deixa trazer para a frente quem tem o foco: junta-se a fila de entrada da janela da frente)
-        uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero), me = GetCurrentThreadId();
-        AttachThreadInput(me, fg, true); SetForegroundWindow(h); AttachThreadInput(me, fg, false);
+        Focus(h);
     }
 
     static IntPtr Launch() {
@@ -73,7 +103,7 @@ static class Agent {
     static void Toggle() {
         var h = Find();
         if (h == IntPtr.Zero) { h = Launch(); if (h != IntPtr.Zero) Front(h); return; }
-        if (IsWindowVisible(h) && !IsIconic(h) && GetForegroundWindow() == h) { NoAnim(h); ShowWindow(h, SW_HIDE); }
+        if (IsWindowVisible(h) && !IsIconic(h) && GetForegroundWindow() == h) Hide(h);
         else Front(h);
     }
 
@@ -81,7 +111,7 @@ static class Agent {
     static int Main(string[] args) {
         uint vk = 'T'; bool prelaunch = false;
         for (int i = 0; i < args.Length; i++) {
-            if (args[i] == "--hide") { var h = Find(); if (h != IntPtr.Zero) { NoAnim(h); ShowWindow(h, SW_HIDE); } return 0; }
+            if (args[i] == "--hide") { var h = Find(); if (h != IntPtr.Zero) Hide(h); return 0; }
             if (args[i] == "--prelaunch") prelaunch = true;
             if (args[i] == "--key" && i + 1 < args.Length) vk = char.ToUpperInvariant(args[++i][0]);
             if (args[i] == "--wezterm" && i + 1 < args.Length) Gui = args[++i];
