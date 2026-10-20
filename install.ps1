@@ -64,7 +64,9 @@ $Apps = @(
     @('BurntSushi.ripgrep.MSVC', 'search in files'), @('sharkdp.fd', 'find files'), @('eza-community.eza', 'ls with icons'),
     @('uutils.coreutils', 'the Linux commands'), @('zyedidia.micro', 'simple editor'), @('Helix.Helix', 'code editor'),
     @('JesseDuffield.lazygit', 'git with a UI'), @('dandavison.delta', 'git diffs'), @('sxyazi.yazi', 'file manager'),
-    @('charmbracelet.glow', 'markdown'), @('yt-dlp.yt-dlp', 'yt'), @('Gyan.FFmpeg', 'yt / st'), @('shinchiro.mpv', 'the video player'),
+    # (o ffmpeg vem com o yt-dlp: o winget instala o yt-dlp.FFmpeg como dependencia; um 2.o, o Gyan.FFmpeg, chocava
+    # com o comando "ffmpeg" que ja existia e era reinstalado a cada vez)
+    @('charmbracelet.glow', 'markdown'), @('yt-dlp.yt-dlp', 'yt (and ffmpeg)'), @('shinchiro.mpv', 'the video player'),
     @('hpjansson.Chafa', 'images in the terminal'), @('jqlang.jq', 'JSON'), @('bootandy.dust', 'disk usage'), @('tldr-pages.tlrc', 'tldr')
 )
 # winget: "Failed to extract the contents of the archive" (-1978335140) acontece em alguns Windows com o metodo de
