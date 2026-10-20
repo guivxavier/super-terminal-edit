@@ -750,7 +750,64 @@ $WslPage = @{
     end = 'WSL ready: open it from the + menu (or type wsl)'
 }
 
-# ---------- 7. sudo ----------
+# ---------- 7. atalhos ----------
+# (os mesmos nomes e teclas que o wezterm.lua; o WezTerm le o keys.json e recarrega sozinho)
+$KeysFile = "$StCfg\keys.json"
+$KeyActs = @(
+    @('new_tab', 'New tab', 'CTRL+t'), @('split', 'Split the pane', 'CTRL+d'), @('close', 'Close the pane', 'CTRL+w'),
+    @('prev_tab', 'Previous tab', 'CTRL+q'), @('next_tab', 'Next tab', 'CTRL+e'), @('zoom', 'Zoom the pane', 'CTRL+SHIFT+z'),
+    @('fullscreen', 'Full screen / window', 'CTRL+b'), @('search', 'Search the scrollback', 'CTRL+SHIFT+f'),
+    @('copy', 'Copy (no selection: stop)', 'CTRL+c'), @('paste', 'Paste', 'CTRL+v'),
+    @('pane_left', 'Pane on the left', 'CTRL+LeftArrow'), @('pane_right', 'Pane on the right', 'CTRL+RightArrow'),
+    @('pane_up', 'Pane above', 'CTRL+UpArrow'), @('pane_down', 'Pane below', 'CTRL+DownArrow'))
+function Get-Keys { $h = @{}; if (Test-Path $KeysFile) { try { (Get-Content $KeysFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $h[$_.Name] = $_.Value } } catch {} }; $h }
+function Show-Key([string]$s) { ($s -replace 'Arrow$', '' -split '\+' | ForEach-Object { $_.ToLower() }) -join '+' }
+function ConvertTo-KeySpec($k) {
+    $m = @(); if ($k.Modifiers -band 4) { $m += 'CTRL' }; if ($k.Modifiers -band 2) { $m += 'SHIFT' }; if ($k.Modifiers -band 1) { $m += 'ALT' }
+    $n = "$($k.Key)"
+    $key = if ($n -match '^[A-Z]$') { $n.ToLower() } elseif ($n -match '^D(\d)$') { $Matches[1] } elseif ($n -match '^(F\d+|(Left|Right|Up|Down)Arrow|Home|End|PageUp|PageDown|Insert|Delete|Tab|Enter|Backspace)$') { $n } elseif ($n -eq 'Spacebar') { 'Space' } elseif ($k.KeyChar -gt ' ') { "$($k.KeyChar)" }
+    if (-not $key -or (-not $m -and $key -notmatch '^F\d+$')) { return $null }   # (sem ctrl/alt so as teclas F: as outras sao para escrever)
+    (@($m) + $key) -join '+'
+}
+function Edit-Keys {
+    $sel = 0; $msg = $null
+    while ($true) {
+        $cur = Get-Keys
+        $o = "$e[2J$e[H`n  $e[1;${Accent}m$([char]0xf11c)  $e[1;97mShortcuts$e[0m`n`n  $e[90mThe terminal's own shortcuts. Shell keys (ctrl+r, tab...) stay as they are.$e[0m`n`n"
+        for ($i = 0; $i -lt $KeyActs.Count; $i++) {
+            $a = $KeyActs[$i]; $v = if ($cur[$a[0]]) { $cur[$a[0]] } else { $a[2] }; $chg = [bool]$cur[$a[0]]
+            $line = "{0,-28}" -f $a[1]; $kv = "$(Show-Key $v)$(if ($chg) { "   $e[90m(was $(Show-Key $a[2]))" })"
+            if ($i -eq $sel) { $o += "  $e[${Accent}m$([char]0x258C)$e[48;2;62;68;81;1;97m $line $e[0m  $e[${Accent}m$kv$e[0m`n" } else { $o += "   $e[37m $line $e[0m  $e[$(if ($chg) { $Accent } else { '37' })m$kv$e[0m`n" }
+        }
+        if ($msg) { $o += "`n  $msg$e[0m`n" }
+        $o += "`n  $(Chips @(@('↑↓', 'choose'), @('enter', 'change'), @('r', 'back to default'), @('esc', 'back')))"
+        [Console]::Write($o); $msg = $null
+        $k = [Console]::ReadKey($true); $a = $KeyActs[$sel]
+        switch ($k.Key) {
+            'UpArrow' { $sel = ($sel - 1 + $KeyActs.Count) % $KeyActs.Count; continue }
+            'DownArrow' { $sel = ($sel + 1) % $KeyActs.Count; continue }
+            'Escape' { return }
+            'Enter' {
+                [Console]::Write("$e[2J$e[H`n  $e[1;97m$($a[1])$e[0m`n`n  $e[37mpress the new shortcut (ctrl / alt + a key, or an F key)   $e[90mesc cancels$e[0m")
+                # enquanto isto esta aberto o WezTerm larga todos os atalhos (wezterm.lua: keys-editing), senao o ctrl+t abria um separador
+                $flag = "$StCfg\keys-editing"; Set-Content $flag '1'; Start-Sleep -Milliseconds 500
+                $tc = [Console]::TreatControlCAsInput; [Console]::TreatControlCAsInput = $true
+                try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) }; do { $n = [Console]::ReadKey($true); $spec = ConvertTo-KeySpec $n } until ($spec -or $n.Key -eq 'Escape') }
+                finally { [Console]::TreatControlCAsInput = $tc; Remove-Item $flag -ErrorAction Ignore }
+                if ($n.Key -eq 'Escape' -and -not $spec) { continue }
+                $other = $KeyActs | Where-Object { $_[0] -ne $a[0] -and $(if ($cur[$_[0]]) { $cur[$_[0]] } else { $_[2] }) -eq $spec } | Select-Object -First 1
+                if ($other) { $msg = "$e[33m$([char]0xf071)  $(Show-Key $spec) is already '$($other[1])': change that one first"; continue }
+                if ($spec -match '^CTRL\+[1-9]$') { $msg = "$e[33m$([char]0xf071)  ctrl+1..9 go to the tabs"; continue }
+                $cur[$a[0]] = $spec; if ($spec -eq $a[2]) { $cur.Remove($a[0]) }
+                $cur | ConvertTo-Json | Set-Content $KeysFile -Encoding utf8
+                $msg = "$e[32m$([char]0xf00c)  $($a[1]): $(Show-Key $spec) (already on)"; continue
+            }
+        }
+        if ($k.KeyChar -eq 'r' -and $cur[$a[0]]) { $cur.Remove($a[0]); $cur | ConvertTo-Json | Set-Content $KeysFile -Encoding utf8; $msg = "$e[32m$([char]0xf00c)  $($a[1]): back to $(Show-Key $a[2])" }
+    }
+}
+
+# ---------- 8. sudo ----------
 function Get-SudoMode { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo' -ErrorAction Ignore).Enabled }
 $SudoPage = if ([Environment]::OSVersion.Version.Build -ge 22000) {
     @{ icon = [char]0xf132; title = 'sudo'
@@ -788,6 +845,8 @@ $Steps = [ordered]@{
         check = { $l = Get-Logo; if ($l.lines.Count) { @{ ok = $true; text = "$($l.lines.Count) lines · $($l.colors -join ' / ')" } } else { @{ ok = $false; text = 'no logo' } } } }
     wsl = @{ icon = [char]0xe712; name = 'WSL (Linux)'; run = { Show-Guide $WslPage }
         check = { $d = Get-Distro; if (-not $d) { @{ ok = $false; text = 'not installed (optional)' } } elseif ("$(Invoke-Wsl 'grep -q kvn.zshrc ~/.zshrc && echo y')".Trim() -eq 'y') { @{ ok = $true; text = $d } } else { @{ ok = $false; text = "$d · not linked yet" } } } }
+    keys = @{ icon = [char]0xf11c; name = 'Shortcuts'; run = { Edit-Keys }
+        check = { $n = (Get-Keys).Count; @{ ok = $true; text = $(if ($n) { "$n changed" } else { 'defaults' }) } } }
     sudo = @{ icon = [char]0xf132; name = 'sudo'; run = { Show-Guide $SudoPage }
         check = {
             if ([Environment]::OSVersion.Version.Build -ge 22000) { switch ([int](Get-SudoMode)) { 3 { @{ ok = $true; text = 'inline' } } 0 { @{ ok = $false; text = 'off' } } default { @{ ok = $true; text = 'on (inline is nicer)' } } } }

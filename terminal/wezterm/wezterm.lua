@@ -268,19 +268,19 @@ local function new_tab(window, pane)
   add_header(p)
 end
 
-config.keys = {
-  { key = 't', mods = 'CTRL', action = wezterm.action_callback(new_tab) },
-  { key = 'd', mods = 'CTRL', action = act.SplitHorizontal { domain = 'CurrentPaneDomain' } },
-  { key = 'w', mods = 'CTRL', action = wezterm.action_callback(close_or_hide) },
-  { key = 'q', mods = 'CTRL', action = act.ActivateTabRelative(-1) },
-  { key = 'e', mods = 'CTRL', action = act.ActivateTabRelative(1) },
-  { key = 'z', mods = 'CTRL|SHIFT', action = act.TogglePaneZoomState },
-  { key = 'b', mods = 'CTRL', action = act.ToggleFullScreen },
-  { key = 'F11', action = act.ToggleFullScreen },   -- ecra inteiro (como arranca) <-> janela
-  { key = 'f', mods = 'CTRL|SHIFT', action = act.Search 'CurrentSelectionOrEmptyString' },
-  { key = 'v', mods = 'CTRL', action = act.PasteFrom 'Clipboard' },
+-- cada atalho tem um nome; o setup > Shortcuts muda-os em ~\.config\superterminal\keys.json ({"new_tab": "CTRL+SHIFT+t"})
+local actions = {
+  { 'new_tab', 'CTRL+t', wezterm.action_callback(new_tab) },
+  { 'split', 'CTRL+d', act.SplitHorizontal { domain = 'CurrentPaneDomain' } },
+  { 'close', 'CTRL+w', wezterm.action_callback(close_or_hide) },
+  { 'prev_tab', 'CTRL+q', act.ActivateTabRelative(-1) },
+  { 'next_tab', 'CTRL+e', act.ActivateTabRelative(1) },
+  { 'zoom', 'CTRL+SHIFT+z', act.TogglePaneZoomState },
+  { 'fullscreen', 'CTRL+b', act.ToggleFullScreen },
+  { 'search', 'CTRL+SHIFT+f', act.Search 'CurrentSelectionOrEmptyString' },
+  { 'paste', 'CTRL+v', act.PasteFrom 'Clipboard' },
   -- Ctrl+C: com texto selecionado copia; sem selecao chega ao programa (interromper)
-  { key = 'c', mods = 'CTRL', action = wezterm.action_callback(function(window, pane)
+  { 'copy', 'CTRL+c', wezterm.action_callback(function(window, pane)
       local sel = window:get_selection_text_for_pane(pane)
       if sel ~= '' then
         window:perform_action(act.CopyTo 'Clipboard', pane)
@@ -289,13 +289,38 @@ config.keys = {
         window:perform_action(act.SendKey { key = 'c', mods = 'CTRL' }, pane)
       end
     end) },
-  { key = 'LeftArrow', mods = 'CTRL', action = act.ActivatePaneDirection 'Left' },
-  { key = 'RightArrow', mods = 'CTRL', action = act.ActivatePaneDirection 'Right' },
-  { key = 'UpArrow', mods = 'CTRL', action = act.ActivatePaneDirection 'Up' },
-  { key = 'DownArrow', mods = 'CTRL', action = act.ActivatePaneDirection 'Down' },
+  { 'pane_left', 'CTRL+LeftArrow', act.ActivatePaneDirection 'Left' },
+  { 'pane_right', 'CTRL+RightArrow', act.ActivatePaneDirection 'Right' },
+  { 'pane_up', 'CTRL+UpArrow', act.ActivatePaneDirection 'Up' },
+  { 'pane_down', 'CTRL+DownArrow', act.ActivatePaneDirection 'Down' },
 }
-for i = 1, 9 do
-  table.insert(config.keys, { key = tostring(i), mods = 'CTRL', action = act.ActivateTab(i - 1) })
+local KEYS_FILE = wezterm.home_dir .. '\\.config\\superterminal\\keys.json'
+local EDITING = wezterm.home_dir .. '\\.config\\superterminal\\keys-editing'
+wezterm.add_to_config_reload_watch_list(KEYS_FILE); wezterm.add_to_config_reload_watch_list(EDITING)
+local custom = {}
+do
+  local f = io.open(KEYS_FILE, 'r')
+  if f then local s = f:read('*a'); f:close(); local ok, t = pcall(wezterm.json_parse, s); if ok and type(t) == 'table' then custom = t end end
+end
+local function bind(spec, action)   -- "CTRL+SHIFT+z" -> { key = 'z', mods = 'CTRL|SHIFT' }
+  local parts = {}; for p in spec:gmatch('[^+]+') do table.insert(parts, p) end
+  local key = table.remove(parts)
+  return { key = key, mods = (#parts > 0) and table.concat(parts, '|') or 'NONE', action = action }
+end
+config.keys = {}
+local f_ed = io.open(EDITING, 'r')
+if f_ed then
+  -- o editor de atalhos esta aberto: as teclas vao todas para ele (para se poder carregar o atalho novo)
+  f_ed:close(); config.disable_default_key_bindings = true
+else
+  for _, a in ipairs(actions) do
+    local spec = custom[a[1]] or a[2]
+    if spec ~= '' then table.insert(config.keys, bind(spec, a[3])) end   -- "" = sem atalho
+  end
+  table.insert(config.keys, { key = 'F11', action = act.ToggleFullScreen })   -- ecra inteiro (como arranca) <-> janela
+  for i = 1, 9 do
+    table.insert(config.keys, { key = tostring(i), mods = 'CTRL', action = act.ActivateTab(i - 1) })
+  end
 end
 
 return config
