@@ -519,7 +519,7 @@ function cd {
             catch {
                 Remove-PSDrive $l -Force -ErrorAction SilentlyContinue
                 if ("$_" -match 'denied|negado') { Write-Warn "drive ${l}: access denied to $rp" "save the share's password first: cmdkey /add:$((($rp -split '\\')[2])) /user:<pc>\<user> /pass" }
-                else { Write-Warn "drive ${l}: is the share $rp and it didn't respond" 'is the other PC on? (desktop: wake desktop)' }
+                else { Write-Warn "drive ${l}: is the share $rp and it didn't respond" 'is the other PC on? (wake <pc> wakes it, if it has a MAC in pcs.json)' }
                 return
             }
         }
@@ -836,7 +836,7 @@ function Test-SshPeer([string]$name, [switch]$NotOrigin) {
     $ok = try { $tcp.ConnectAsync($hn, 22).Wait(1500) -and $tcp.Connected } catch { $false } finally { $tcp.Dispose() }
     if (-not $ok) {
         $peer = try { (tailscale status --json | ConvertFrom-Json).Peer.PSObject.Properties.Value | Where-Object { $_.HostName -eq $hn } | Select-Object -First 1 } catch { $null }
-        if ($peer -and $peer.Online) { Write-Warn "$name is on but not accepting SSH" "the sshd service is stopped or not installed (on $name, as admin: & `"`$HOME\.config\setup-sshd.ps1`")" }
+        if ($peer -and $peer.Online) { Write-Warn "$name is on but not accepting SSH" "its SSH server is off or not installed: on $name, setup > Tailscale > the SSH server step" }
         else { Write-Warn "$name is off, asleep or offline" $(if ($WakeMacs[$name]) { "to wake it: wake $name" }) }
         return $false
     }
@@ -853,7 +853,7 @@ function ssh {
     # (SUPERTERMINAL=1: o perfil do outro PC so carrega dentro do SuperTerminal; o ssh nao leva o ambiente, vai no comando)
     $remote = if ($SshShell[$name] -eq 'cmd') { "set SUPERTERMINAL=1&& $(if ($pinned) { 'set KVN_COMPACT=1&& ' })pwsh -NoLogo" } else { "`$env:SUPERTERMINAL = '1'; $(if ($pinned) { "`$env:KVN_COMPACT = '1'; " })pwsh -NoLogo" }
     Clear-FfRegion; & $SshExe -t $name $remote
-    if ($LASTEXITCODE -eq 255) { Write-Warn "connection to $name failed" "key rejected? on $name, as admin: & `"`$HOME\.config\setup-sshd.ps1`"" }
+    if ($LASTEXITCODE -eq 255) { Write-Warn "connection to $name failed" "key rejected? here: setup > Tailscale > copy my key (or on $name, its SSH server step)" }
     ff
 }
 
@@ -1245,7 +1245,10 @@ function Wait-Until([scriptblock]$cond, [string]$msg, [int]$secs, [scriptblock]$
     } finally { [Console]::Write("`e[?25h") }
     [Console]::Write("`r`e[K"); -1
 }
-function wake([string]$name = 'desktop') {
+function wake([string]$name) {
+    # (sem nome: o 1.o PC com MAC no pcs.json)
+    if (-not $name) { $name = @($WakeMacs.Keys | Sort-Object)[0] }
+    if (-not $name) { Write-Warn 'no PC to wake yet' 'Wake-on-LAN needs the PC''s MAC: "mac" for it in ~\.config\superterminal\pcs.json (setup > Tailscale names the PCs)'; return }
     if (-not $WakeMacs[$name]) { Write-Warn "no MAC address for '$name'" "known: $($WakeMacs.Keys -join ', ')"; return }
     $hn = $SshHosts[$name]; $ip = Get-LanIp $name
     Write-Host ''
@@ -1270,7 +1273,10 @@ function wake([string]$name = 'desktop') {
         Write-Host "  `e[90mIf it was shut down, press its power button.`e[0m"
     }
 }
-function suspend([string]$name = 'desktop') {
+function suspend([string]$name) {
+    # (sem nome: o outro PC; "suspend <este>" suspende este)
+    if (-not $name) { $name = Get-OtherPc }
+    if (-not $name) { Write-Warn 'no other PC yet' 'setup > Tailscale names your PCs (or: suspend <this PC''s name>)'; return }
     $hn = $SshHosts[$name]
     if ($hn -eq $env:COMPUTERNAME) { Write-Host "  `e[35m$([char]0x263E)`e[0m this PC is going to sleep"; Add-Type -AssemblyName System.Windows.Forms; [void][Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false); return }
     if (-not (Test-SshPeer $name)) { return }

@@ -32,17 +32,39 @@ $InH = [W.Con]::GetStdHandle(-10); $InMode = 0; [void][W.Con]::GetConsoleMode($I
 function Read-Key { [void][W.Con]::SetConsoleMode($InH, ($InMode -band (-bnot 0x200))); [Console]::ReadKey($true) }
 
 # ---------- conta e addons ----------
+function Read-Field([int]$row, [string]$label, [switch]$Secret) {
+    # campo de texto numa linha: enter = pronto, esc = desistir ($null); a password aparece com pontos
+    $buf = [Text.StringBuilder]::new()
+    while ($true) {
+        $shown = if ($Secret) { [string][char]0x2022 * $buf.Length } else { "$buf" }
+        [Console]::Write("$e[$row;4H$e[2K$e[37m$label $e[97m$shown$e[?25h")
+        $k = Read-Key
+        switch ($k.Key) {
+            'Escape' { [Console]::Write("$e[?25l"); return $null }
+            'Enter' { [Console]::Write("$e[?25l"); return "$buf" }
+            'Backspace' { if ($buf.Length) { [void]$buf.Remove($buf.Length - 1, 1) }; continue }
+        }
+        if ([int]$k.KeyChar -ge 32) { [void]$buf.Append($k.KeyChar) }
+    }
+}
 function Invoke-Login {
     # só se não houver sessão guardada: o utilizador escreve o email e a palavra-passe da conta Stremio
-    [Console]::Write("$e[2J$e[3;4H$e[1;${Accent}m$([char]0xf26c)  $e[1;97msign in to Stremio$e[0m$e[5;4H$e[90m(the session is saved in ~\.config\stremio-auth.txt)$e[0m$e[7;4H$e[37memail: $e[?25h")
-    $mail = Read-Host; [Console]::Write("$e[8;4H$e[37mpassword: ")
-    $pw = Read-Host -AsSecureString; [Console]::Write("$e[?25l")
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pw))
-    try {
-        $r = Invoke-RestMethod -Method Post "$Api/login" -Body (@{ email = $mail; password = $plain; type = 'Login' } | ConvertTo-Json) -ContentType 'application/json'
-        if ($r.result.authKey) { Set-Content $AuthFile $r.result.authKey -NoNewline; return $true }
-    } catch {}
-    [Console]::Write("$e[10;4H$e[31mcould not sign in$e[0m"); Start-Sleep 2; $false
+    # (esc sai; email ou password errados: diz e deixa tentar outra vez)
+    $err = ''
+    while ($true) {
+        [Console]::Write("$e[2J$e[3;4H$e[1;${Accent}m$([char]0xf26c)  $e[1;97msign in to Stremio$e[0m$e[5;4H$e[90mthe session is saved in ~\.config\stremio-auth.txt   $([char]0x00B7)   no account? stremio.com (free)$e[0m" +
+            "$e[12;4H$e[48;2;62;68;81;97m enter $e[0m $e[90mnext$e[0m   $e[48;2;62;68;81;97m esc $e[0m $e[90mleave st$e[0m" + $(if ($err) { "$e[10;4H$e[31m$err$e[0m" }))
+        $mail = Read-Field 7 'email:'; if ($null -eq $mail) { return $false }
+        if (-not $mail.Trim()) { continue }
+        $plain = Read-Field 8 'password:' -Secret; if ($null -eq $plain) { return $false }
+        [Console]::Write("$e[10;4H$e[2K$e[90msigning in...$e[0m")
+        try {
+            $r = Invoke-RestMethod -Method Post "$Api/login" -Body (@{ email = $mail.Trim(); password = $plain; type = 'Login' } | ConvertTo-Json) -ContentType 'application/json' -TimeoutSec 20
+            if ($r.result.authKey) { Set-Content $AuthFile $r.result.authKey -NoNewline; return $true }
+            $err = 'could not sign in: wrong email or password?'
+        } catch { $err = 'could not sign in: wrong email or password, or no connection' }
+        finally { $plain = $null }
+    }
 }
 function Invoke-Api([string]$method, $body) {
     $body.authKey = (Get-Content $AuthFile -Raw).Trim()

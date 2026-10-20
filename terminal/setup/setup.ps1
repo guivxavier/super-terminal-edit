@@ -19,11 +19,22 @@ $Chip = "$e[48;2;62;68;81;97m"
 function Clear-Screen { [Console]::Write("$e[2J$e[3J$e[H") }
 function Title([string]$icon, [string]$t) { Clear-Screen; [Console]::Write("`n  $e[1;${Accent}m$icon  $e[1;97m$t$e[0m`n`n") }
 function Say([string]$t, [string]$c = '37') { [Console]::Write("  $e[${c}m$t$e[0m`n") }
-function Ask([string]$q) { [Console]::Write("  $e[97m$q$e[0m $e[?25h"); $a = Read-Host; [Console]::Write("$e[?25l"); $a }
-function Ask-Secret([string]$q) {
-    [Console]::Write("  $e[97m$q$e[0m $e[?25h"); $s = Read-Host -AsSecureString; [Console]::Write("$e[?25l")
-    [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
+# campo de texto: enter = pronto, esc = desistir (devolve $null); -Secret mostra pontos (o Read-Host nao deixava sair)
+function Ask([string]$q, [switch]$Secret) {
+    $row = [Console]::CursorTop + 1; $buf = [Text.StringBuilder]::new()
+    while ($true) {
+        $shown = if ($Secret) { [string][char]0x2022 * $buf.Length } else { "$buf" }
+        [Console]::Write("$e[$row;1H$e[2K  $e[97m$q$e[0m $shown  $e[90m(esc: back)$e[0m$e[$row;$(4 + $q.Length + $shown.Length)H$e[?25h")
+        $k = [Console]::ReadKey($true)
+        switch ($k.Key) {
+            'Escape' { [Console]::Write("$e[?25l`n"); return $null }
+            'Enter' { [Console]::Write("$e[$row;1H$e[2K  $e[97m$q$e[0m $shown$e[?25l`n"); return "$buf" }
+            'Backspace' { if ($buf.Length) { [void]$buf.Remove($buf.Length - 1, 1) }; continue }
+        }
+        if ([int]$k.KeyChar -ge 32) { [void]$buf.Append($k.KeyChar) }
+    }
 }
+function Ask-Secret([string]$q) { Ask $q -Secret }
 function Pause-Key { [Console]::Write("`n  $e[90many key to go on$e[0m"); [void][Console]::ReadKey($true) }
 function Open-Url([string]$u) { Start-Process $u }
 function Chips($list) { ($list | ForEach-Object { "$Chip $($_[0]) $e[0m $e[37m$($_[1])$e[0m" }) -join '   ' }
@@ -253,10 +264,11 @@ function Set-PcName {
     $k = [Console]::ReadKey($true); if ("$($k.KeyChar)" -notmatch '^[1-9]$' -or [int]"$($k.KeyChar)" -gt $devs.Count) { return }
     $d = $devs[[int]"$($k.KeyChar)" - 1]; $hn = $d.HostName
     $def = ($hn.ToLower() -replace '-[^-]+$') ; if (-not $def) { $def = $hn.ToLower() }
-    $name = "$(Ask "name for $($hn.ToLower()) (enter = $def):")".Trim().ToLower(); if (-not $name) { $name = $def }
+    $name = Ask "name for $($hn.ToLower()) (enter = $def):"; if ($null -eq $name) { return }
+    $name = $name.Trim().ToLower(); if (-not $name) { $name = $def }
     if ($name -notmatch '^[a-z0-9][a-z0-9_-]*$') { $script:Msg = "$e[31m$([char]0xf00d)  use letters, numbers, - and _ only"; return }
     $self = $hn -eq $env:COMPUTERNAME
-    $user = if ($self) { $env:USERNAME } else { $u = "$(Ask "your user name on $name (enter = $env:USERNAME):")".Trim(); if ($u) { $u } else { $env:USERNAME } }
+    $user = if ($self) { $env:USERNAME } else { $u = Ask "your user name on $name (enter = $env:USERNAME):"; if ($null -eq $u) { return }; $u = $u.Trim(); if ($u) { $u }else { $env:USERNAME } }
     # (um nome e um PC: tira o nome antigo deste PC e outro PC que ja tivesse este nome)
     $old = @($pcs | Where-Object { $_.host -eq $hn -or $_.name -eq $name })
     foreach ($o in $old) { if (-not $o.self) { Set-SshHost $o.name $null $null } }
@@ -729,7 +741,7 @@ $Steps = [ordered]@{
     tailscale = @{ icon = [char]0xf0c2; name = 'Tailscale'; run = { Show-Guide $TsPage }
         check = { $s = Get-Ts; if (-not $s) { @{ ok = $false; text = 'not installed' } } elseif ($s.BackendState -ne 'Running') { @{ ok = $false; text = 'not signed in' } } else { $p = @($s.Peer.PSObject.Properties.Value); @{ ok = $true; text = "$($s.Self.HostName.ToLower()) · $(@($p | Where-Object Online).Count + 1)/$($p.Count + 1)" } } } }
     youtube = @{ icon = [char]0xf16a; name = 'YouTube (yt)'; run = { Show-Guide (New-YtPage) }
-        check = { if (Test-Path $YtCookies) { @{ ok = $true; text = 'signed in' } } else { @{ ok = $false; text = 'not signed in (yt still searches and plays)' } } } }
+        check = { if (Test-Path $YtCookies) { @{ ok = $true; text = 'signed in' } } else { @{ ok = $false; text = 'not signed in (yt asks for it when it opens)' } } } }
     stremio = @{ icon = [char]0xf26c; name = 'Stremio (st)'; run = { Show-StremioSetup }
         check = { if (Test-Path $StremioAuth) { $m = if (Test-Path "$StCfg\stremio-mode.txt") { if ((Get-Content "$StCfg\stremio-mode.txt") -eq 'rd') { ' · Real-Debrid' } else { ' · without debrid' } }; @{ ok = $true; text = "signed in$m" } } else { @{ ok = $false; text = 'not set up' } } } }
     logo = @{ icon = [char]0xf03e; name = 'Header logo'; run = { Edit-Logo }

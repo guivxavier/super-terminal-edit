@@ -7,7 +7,7 @@ $e = [char]27
 $lines = @()
 try {
     $j = & $ts status --json 2>$null | ConvertFrom-Json
-    if ($j.BackendState -ne 'Running') { $lines += "$e[90mtailscale parado ($($j.BackendState))" }
+    if ($j.BackendState -ne 'Running') { $lines += "$e[90mtailscale stopped ($($j.BackendState))" }
     else {
         $nodes = @($j.Self) + @($j.Peer.PSObject.Properties.Value)
         $dup = $nodes | Group-Object HostName | Where-Object Count -gt 1 | ForEach-Object Name
@@ -35,7 +35,7 @@ try {
             $lines += "$e[11D$e[${lcol}m" + "  $label".PadRight(14) + "$e[0;${sc}m" + $st.PadRight(9) + "$e[0;90m" + "$ip".PadRight(16) + "$here$e[0m"
         }
     }
-} catch { $lines += "$e[90mtailscale indisponivel" }
+} catch { $lines += "$e[90mtailscale not installed" }
 New-Item -ItemType Directory $dir -Force | Out-Null
 1..6 | ForEach-Object { Remove-Item "$dir\ts$_.txt" -ErrorAction SilentlyContinue }
 for ($i = 0; $i -lt [Math]::Min($lines.Count, 6); $i++) { [IO.File]::WriteAllText("$dir\ts$($i + 1).txt", $lines[$i], [Text.Encoding]::ASCII) }

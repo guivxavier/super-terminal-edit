@@ -300,7 +300,7 @@ function Invoke-Login([switch]$Required) {
         $steps += "close the private window $e[90m— yt carries on by itself once the file shows up$e[0m"
         $lines = @('', "   $e[1;31m$([char]0xf16a)  $e[1;97msign in to YouTube$e[0;90m   ($(if ($b) { $b.name } else { 'browser' }))$e[0m", '')
         for ($i = 0; $i -lt $steps.Count; $i++) { $lines += "   $e[1;97m$($i + 1)$e[0;37m  $($steps[$i])"; $lines += '' }
-        $lines += "   $e[90m$([char]0x2500 * 60)$e[0m"
+        $lines += "   $e[90m$([string][char]0x2500 * 60)$e[0m"
         $lines += "   $e[37mp$e[90m reopen the windows     $e[37mx$e[90m sign out     $e[37mesc$e[90m $(if ($Required) { 'quit yt' } else { 'back' })$e[0m"
         [Console]::Write("$e[2J$e[H" + ($lines -join "`n"))
         # espera: ficheiro novo de cookies nas Transferências (avança sozinho) ou tecla

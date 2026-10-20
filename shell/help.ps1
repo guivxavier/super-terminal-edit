@@ -15,9 +15,9 @@ $KvnHelp = @(
         use = @(@('view <file.md>', 'markdown with colors; mermaid diagrams drawn as images'), @('view <file.pdf>', 'pages as images: arrows / pgup pgdn / home end, q quits'), @('view <image>', 'shows the image'), @('view <other>', 'code / text with colors and line numbers (bat)'))
         notes = @('from WSL, a pdf opens in a new tab (it needs the keyboard)') }
     # ---- pcs ----
-    @{ g = 'pcs'; c = 'ssh'; s = 'open a shell on the other PC'; ins = 'ssh '
-        use = @(@('ssh desktop', 'from the laptop'), @('ssh laptop', 'from the desktop'))
-        notes = @('checks first: same PC, PC off (wake desktop), ssh service stopped', 'ctrl+w leaves the session') }
+    @{ g = 'pcs'; c = 'ssh'; s = 'open a shell on another of your PCs'; ins = 'ssh '
+        use = @(@('ssh <pc>', 'the name you gave it in setup > Tailscale (its Tailscale name works too)'), @('ssh <anything else>', 'the normal ssh'))
+        notes = @('checks first: same PC, PC off (wake <pc>), SSH server off, key not copied', 'ctrl+w leaves the session', 'names, SSH server and keys: setup > Tailscale') }
     @{ g = 'pcs'; c = 'get'; s = 'copy a file / folder FROM the other PC'; ins = 'get '
         use = @(@('get <path>', 'to your Downloads (path on the other PC; tab completes it)'), @('get <path> <dest>', 'to <dest>'))
         notes = @('relative paths start in the other PC''s home: get Downloads\x.zip', 'progress bar; folders go whole') }
@@ -28,16 +28,16 @@ $KvnHelp = @(
     @{ g = 'pcs'; c = 'super'; s = 'SuperTerminal itself: upgrade, sync your PCs, status'; ins = 'super '
         use = @(@('super upgrade', 'the latest version from GitHub, on this PC'), @('super sync', 'this PC''s version to your other PCs (they apply it)'), @('super status', 'this PC and the others compared with GitHub; changes nothing'))
         notes = @('only when you run it: nothing updates by itself', 'the other PCs: the ones named in setup > Tailscale and online; they get the version over ssh (no GitHub needed there)', 'yours stays: cookies, accounts, PC names, the header logo, and any file you changed on this PC (the new one is saved next to it as .new)') }
-    @{ g = 'pcs'; c = 'wake'; s = 'wake the desktop (Wake-on-LAN)'; ins = 'wake'
-        use = @(@('wake', 'wakes the desktop and waits until it answers'))
-        notes = @('only on the same network as the desktop') }
-    @{ g = 'pcs'; c = 'suspend'; s = 'put the desktop (or this PC) to sleep'; ins = 'suspend'
-        use = @(@('suspend', 'suspends the desktop'), @('suspend laptop', 'from the laptop: suspends this PC')) }
+    @{ g = 'pcs'; c = 'wake'; s = 'wake another PC (Wake-on-LAN)'; ins = 'wake'
+        use = @(@('wake', 'wakes your other PC and waits until it answers'), @('wake <pc>', 'that one'))
+        notes = @('only on the same network as that PC', 'needs its MAC: "mac" for it in ~\.config\superterminal\pcs.json') }
+    @{ g = 'pcs'; c = 'suspend'; s = 'put another PC (or this one) to sleep'; ins = 'suspend'
+        use = @(@('suspend', 'suspends your other PC'), @('suspend <pc>', 'that one; this PC''s own name suspends this PC')) }
     # ---- files ----
     @{ g = 'files'; c = 'ls'; s = 'list a folder (icons, sizes, dates)'; ins = 'ls '
         use = @(@('ls', 'this folder'), @('ls <folder>', 'another folder'), @('ls -a', 'include hidden files'), @('la', 'everything with eza'), @('ll', 'details with eza (+ git status)'), @('lt', 'tree, 2 levels')) }
     @{ g = 'files'; c = 'cd'; s = 'change folder'; ins = 'cd '
-        use = @(@('cd <folder>', 'go to the folder'), @('cd', 'home'), @('cd ..', 'up one'), @('cd -', 'back to the previous folder'), @('cd D', 'the desktop''s D: drive (network share)'), @('cd C:\full\path', 'any path'))
+        use = @(@('cd <folder>', 'go to the folder'), @('cd', 'home'), @('cd ..', 'up one'), @('cd -', 'back to the previous folder'), @('cd C:\full\path', 'any path'))
         kb = @(@('tab', 'complete the folder name (again = next one)'), @('ctrl+space', 'folder menu: tab goes in, typing filters, enter goes'), @('ctrl+backspace', 'remove the last folder of the path')) }
     @{ g = 'files'; c = 'z'; s = 'jump to a folder you have used before'; ins = 'z '
         use = @(@('z <part of name>', 'best match: z uni -> Trabalhos Uni'), @('z <a> <b>', 'several words: z kiln src'), @('zi <name>', 'choose from a list')) }
