@@ -29,7 +29,42 @@ Add-Type -Namespace W -Name Con -MemberDefinition @"
 [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr h, uint m);
 "@ -ErrorAction SilentlyContinue
 $InH = [W.Con]::GetStdHandle(-10); $InMode = 0; [void][W.Con]::GetConsoleMode($InH, [ref]$InMode)
-function Read-Key { [void][W.Con]::SetConsoleMode($InH, ($InMode -band (-bnot 0x200))); [Console]::ReadKey($true) }
+# (rato ligado: 0x10 + extended 0x80, sem quick edit 0x40 e sem entrada VT 0x200)
+$InModeSt = (($InMode -band (-bnot 0x200)) -band (-bnot 0x40)) -bor 0x10 -bor 0x80
+function Read-Key { [void][W.Con]::SetConsoleMode($InH, $InModeSt); [Console]::ReadKey($true) }
+Add-Type -Namespace St -Name Mouse -MemberDefinition @"
+[StructLayout(LayoutKind.Explicit, Size = 20)] public struct IR { [FieldOffset(0)] public ushort Type; [FieldOffset(4)] public short MX; [FieldOffset(6)] public short MY; [FieldOffset(8)] public int Btn; [FieldOffset(16)] public int Flags; }
+[DllImport("kernel32.dll")] static extern bool GetNumberOfConsoleInputEvents(IntPtr h, out uint n);
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool PeekConsoleInputW(IntPtr h, [Out] IR[] b, uint n, out uint r);
+[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool ReadConsoleInputW(IntPtr h, [Out] IR[] b, uint n, out uint r);
+public static int X, Y, Wheel;
+// tira da fila os eventos do rato (o .NET deita-os fora): 0 nada, 1 clique, 2 roda (Wheel +/-), 3 so mexeu (como no yt)
+public static int Read(IntPtr h) {
+    int r = 0; Wheel = 0; var b = new IR[32]; uint n, got;
+    while (r != 1 && GetNumberOfConsoleInputEvents(h, out n) && n > 0 && PeekConsoleInputW(h, b, Math.Min(n, 32u), out got) && got > 0) {
+        uint k = 0; bool stop = false;
+        while (k < got && b[k].Type == 2) {
+            int fl = b[k].Flags;
+            if (fl == 4) { r = 2; Wheel += (short)(b[k].Btn >> 16) > 0 ? 1 : -1; X = b[k].MX; Y = b[k].MY; }
+            else if ((fl == 0 || fl == 2) && (b[k].Btn & 1) != 0) { if (r == 2) { stop = true; break; } r = 1; X = b[k].MX; Y = b[k].MY; k++; stop = true; break; }
+            else if (fl == 1 && (r == 0 || r == 3)) { r = 3; X = b[k].MX; Y = b[k].MY; }
+            k++;
+        }
+        if (k == 0) break;
+        ReadConsoleInputW(h, b, k, out got);
+        if (stop || k < got) break;
+    }
+    if (r == 2 && Wheel == 0) r = 0;
+    return r;
+}
+"@ -ErrorAction SilentlyContinue
+function New-Key($ch, $key) { [ConsoleKeyInfo]::new([char]$ch, [ConsoleKey]$key, $false, $false, $false) }
+function Get-TileAt([int]$mx, [int]$my) {
+    # o poster por baixo do rato (posicao a contar de 1) -> indice na pagina, ou -1
+    $row = [Math]::Floor(($my - $L.top) / ($L.ph + 4)); $col = [Math]::Floor(($mx - $L.left) / ($L.pw + $L.gap))
+    if ($my -lt $L.top -or $row -ge $L.rows -or $mx -lt $L.left -or $col -ge $L.cols -or ($mx - $L.left) % ($L.pw + $L.gap) -ge $L.pw) { return -1 }
+    $row * $L.cols + $col
+}
 
 # ---------- conta e addons ----------
 function Read-Field([int]$row, [string]$label, [switch]$Secret) {
@@ -88,6 +123,24 @@ foreach ($x in $items) {
     $k = "$($x.n)-$w-$h-s"; $sf = "$dir\six\$k.six"
     try {
         if ($cache.ContainsKey($k)) { continue }
+        if ($env:ST_ITERM) {
+            $src = "$dir\$($x.n).jpg"; if (-not (Test-Path $src)) { continue }
+            $inv = [cultureinfo]::InvariantCulture
+            $pw = [int]($w * [double]::Parse($env:ST_CW, $inv)); $ph = [int]($h * [double]::Parse($env:ST_CH, $inv))
+            $sj = "$dir\six\$k-${pw}x$ph.jpg"
+            if (-not (Test-Path $sj)) {
+                try {
+                    Add-Type -AssemblyName System.Drawing
+                    $img = [Drawing.Image]::FromFile($src); $bmp = [Drawing.Bitmap]::new($pw, $ph); $gr = [Drawing.Graphics]::FromImage($bmp)
+                    $gr.InterpolationMode = 'HighQualityBicubic'; $gr.PixelOffsetMode = 'HighQuality'; $gr.DrawImage($img, 0, 0, $pw, $ph)
+                    $jc = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object MimeType -eq 'image/jpeg'
+                    $ep = [Drawing.Imaging.EncoderParameters]::new(1); $ep.Param[0] = [Drawing.Imaging.EncoderParameter]::new([Drawing.Imaging.Encoder]::Quality, [long]90)
+                    $tmp = "$sj.$([guid]::NewGuid().ToString('N')).tmp"; $bmp.Save($tmp, $jc, $ep); $gr.Dispose(); $bmp.Dispose(); $img.Dispose(); [IO.File]::Move($tmp, $sj, $true)
+                } catch { $sj = $src }
+            }
+            $cache[$k] = "$([char]27)]1337;File=inline=1;width=$w;height=$h;preserveAspectRatio=0:" + [Convert]::ToBase64String([IO.File]::ReadAllBytes($sj)) + [char]7
+            continue
+        }
         if (Test-Path $sf) { try { $cache[$k] = [IO.File]::ReadAllText($sf); continue } catch {} }
         if (-not (Test-Path "$dir\$($x.n).jpg")) { continue }
         $s = ((& $chafa -f sixels --probe off --dither none --stretch --size "${w}x$h" "$dir\$($x.n).jpg" 2>$null) -join '') -replace "$([char]27)\[\?25[hl]", ''
@@ -112,6 +165,11 @@ function Get-Six([string]$id, [int]$w, [int]$h) {
     # sixel já pronto (memória ou disco) ou $null
     $k = "$(Img-Name $id)-$w-$h-s"
     if ($Sixel.ContainsKey($k)) { return $Sixel[$k] }
+    if ($env:ST_ITERM) {
+        $sj = "$SixDir\$k-$(Get-ImgPx $w $h).jpg"
+        if (-not [IO.File]::Exists($sj)) { return $null }
+        try { $Sixel[$k] = "$e]1337;File=inline=1;width=$w;height=$h;preserveAspectRatio=0:" + [Convert]::ToBase64String([IO.File]::ReadAllBytes($sj)) + [char]7; return $Sixel[$k] } catch { return $null }
+    }
     $sf = "$SixDir\$k.six"
     if ([IO.File]::Exists($sf)) { try { $Sixel[$k] = [IO.File]::ReadAllText($sf); return $Sixel[$k] } catch { return $null } }   # (outro thread ainda a gravar: fica para a próxima)
     $null
@@ -182,6 +240,20 @@ function Get-CellRatio {
     2.2
 }
 $CellRatio = Get-CellRatio
+# WezTerm: tamanho real da celula (o espacamento de linha muda-o): posters 2:3 certos e a imagem vai como JPEG no tamanho
+# exato do cartao (protocolo de imagens do iTerm2), em vez do sixel do chafa feito para celulas de 10x20
+$CellW = 10.0; $CellH = 22.0
+if ($env:WEZTERM_PANE -and $env:WEZTERM_EXECUTABLE) {
+    try {
+        $me = (& (Join-Path (Split-Path $env:WEZTERM_EXECUTABLE) 'wezterm.exe') cli list --format json 2>$null | ConvertFrom-Json) | Where-Object pane_id -eq ([int]$env:WEZTERM_PANE)
+        $pxw = $me.size.pixel_width / $me.size.cols; $pxh = $me.size.pixel_height / $me.size.rows
+        if ($pxw -gt 0 -and $pxh -gt 0) {
+            $CellW = $pxw; $CellH = $pxh; $CellRatio = $pxh / $pxw; $env:ST_ITERM = '1'
+            $env:ST_CW = $pxw.ToString([cultureinfo]::InvariantCulture); $env:ST_CH = $pxh.ToString([cultureinfo]::InvariantCulture)
+        }
+    } catch {}
+}
+function Get-ImgPx([int]$w, [int]$h) { "$([int]($w * $CellW))x$([int]($h * $CellH))" }
 function Get-Layout {
     # grelha de posters 2:3 com duas filas; cada poster ocupa ph linhas + barra + nome + ano/nota + espaço
     $W = [Console]::WindowWidth; $H = [Console]::WindowHeight; $top = 9; $gap = 3
@@ -322,10 +394,11 @@ function Draw-Filters($v, $items) {
     $o = "$e[7;1H$e[2K$e[7;$($L.left)H" + (& $chip 't' 'type' $TypeNames[$v.type]) + (& $chip 'g' 'genre' $(if ($v.genre) { $v.genre } else { 'all' }))
     if (-not ($v.tab -eq 'explore' -and $v.q)) { $o += & $chip 'o' 'sort' $OrderNames[$v.order] }
     if ($v.q) { $o += "$e[90msearch $e[48;2;171;178;191;30m $($v.q) $e[0;90m  esc clears$e[0m" }
-    $pages = [Math]::Max(1, [Math]::Ceiling($items.Count / $L.per)); $page = [Math]::Floor($v.sel / $L.per) + 1
-    $pi = if ($items.Count) { "$page / $pages$(if ($v.tab -eq 'explore' -and -not $v.done) { '+' })" } else { '' }
+    $pi = if ($items.Count) { "$($v.sel + 1) / $($items.Count)$(if ($v.tab -eq 'explore' -and -not $v.done) { '+' } else { ' ' })".PadLeft(11) } else { ' ' * 11 }
     $o + "$e[7;$($L.W - $L.left - $pi.Length + 1)H$e[90m$pi$e[0m"
 }
+function Set-Hints([string]$s) { if ($env:WEZTERM_PANE) { [Console]::Write("$e]1337;SetUserVar=hints=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))$([char]7)") } }
+$GridHints = 'enter|open;/|search;t|type;g|genre;f|favorite;tab|favorites;?|all shortcuts;esc|quit'
 function Draw-Grid($v) {
     $script:L = Get-Layout; $script:Pending = [Collections.Generic.List[object]]::new()
     if ($L.W -lt 60 -or $L.H -lt 24) {
@@ -354,7 +427,7 @@ function Draw-Grid($v) {
         $msg = if ($v.busy) { 'loading...' } elseif ($v.tab -eq 'favs' -and -not $Favs.Count) { "no favorites yet  $e[90m—  on a title, press $e[37mf$e[90m to save it here" } elseif ($v.tab -eq 'favs') { 'no favorites match these filters' } else { 'nothing found' }
         $o += "$e[$($L.top + 3);$($L.left)H$e[37m$msg$e[0m"
     }
-    $o += "$e[$($L.H);$($L.W - $L.left - 11)H$e[90m? $e[37mshortcuts$e[0m$e[?2026l"
+    if ($env:WEZTERM_PANE) { Set-Hints $GridHints; $o += "$e[?2026l" } else { $o += "$e[$($L.H);$($L.W - $L.left - 11)H$e[90m? $e[37mshortcuts$e[0m$e[?2026l" }
     [Console]::Write($o)
 }
 function Update-Pending {
@@ -555,7 +628,15 @@ function Show-Title($item) {
                 for ($j = 0; $j -lt $nc; $j++) {
                     $pp = $people[$j]; $cx = $x0 + $j * ($cw + 3)
                     $sx = Get-Six $pp.id $cw $ch
-                    if ($sx) { $o += "$e[$r;${cx}H$sx" } else { for ($q = 0; $q -lt $ch; $q++) { $o += "$e[$($r + $q);${cx}H$e[48;2;44;49;58m" + (' ' * $cw) + "$e[0m" }; if ($pp.poster) { $castPend.Add(@{ id = $pp.id; y = $r; x = $cx; w = $cw; h = $ch }) } }
+                    if ($sx) { $o += "$e[$r;${cx}H$sx" } else {
+                        for ($q = 0; $q -lt $ch; $q++) { $o += "$e[$($r + $q);${cx}H$e[48;2;44;49;58m" + (' ' * $cw) + "$e[0m" }
+                        if ($pp.poster) { $castPend.Add(@{ id = $pp.id; y = $r; x = $cx; w = $cw; h = $ch }) }
+                        else {
+                            # sem foto no catalogo: as iniciais ao centro (como os avatares do YouTube), em vez de uma caixa vazia
+                            $ini = (@("$($pp.name)" -split '\s+' | Where-Object { $_ } | ForEach-Object { $_.Substring(0, 1).ToUpper() }) | Select-Object -First 2) -join ''
+                            $o += "$e[$($r + [Math]::Floor($ch / 2));$($cx + [Math]::Floor(($cw - $ini.Length) / 2))H$e[48;2;44;49;58;1;37m$ini$e[0m"
+                        }
+                    }
                     $o += "$e[$($r + $ch);${cx}H$e[37m$(Fit $pp.name $cw)$e[$($r + $ch + 1);${cx}H$e[90m$(Fit $pp.role $cw)$e[0m"
                 }
             }
@@ -566,7 +647,7 @@ function Show-Title($item) {
             $r += 2; $epTop = $r
             $epList = @($eps | Where-Object { [int]$_.season -eq $seasons[$si] })
         }
-        $o += "$e[$H;4H$e[90m? $e[37mshortcuts$e[0m$e[?2026l"
+        if ($env:WEZTERM_PANE) { Set-Hints 'enter|play;t|trailer;f|favorite;?|all shortcuts;esc|back'; $o += "$e[?2026l" } else { $o += "$e[$H;4H$e[90m? $e[37mshortcuts$e[0m$e[?2026l" }
         [Console]::Write($o)
         # lista de episódios (desenhada à parte: muda com ↑↓ sem redesenhar a página)
         $drawEps = {
@@ -716,7 +797,7 @@ function Show-Streams($meta, [string]$vid, [string]$label) {
             $o += "$e[$yy;1H$e[2K$e[$yy;4H$line"
         }
         if (-not $list.Count -and -not $wait) { $o += "$e[6;4H$e[90mno streams found$(if ($filter) { ' with this filter' })$e[0m" }
-        $o += "$e[$H;4H$e[2K$e[90m$([char]0xf0e7) cached on Real-Debrid (instant)   $([char]0xf019) not cached   ·   ? shortcuts$e[0m$e[?2026l"
+        $o += "$e[$H;4H$e[2K$e[90m$([char]0xf0e7) cached on Real-Debrid (instant)   $([char]0xf019) not cached$(if (-not $env:WEZTERM_PANE) { "   ·   ? shortcuts" })$e[0m$e[?2026l"; Set-Hints 'enter|play;l|language;?|all shortcuts;esc|back'; $o += ""
         [Console]::Write($o)
         # espera por tecla (e vai juntando os addons que respondem)
         # o primeiro da lista e o escolhido (parado ~0,4 s) ficam já resolvidos para o Enter abrir logo
@@ -951,7 +1032,24 @@ try {
     Draw-Grid $v
     :main while ($true) {
         # à espera de tecla: junta os resultados que chegam e desenha os posters que ficam prontos
+        $mk = $null
+        [void][W.Con]::SetConsoleMode($InH, $InModeSt)
         while (-not [Console]::KeyAvailable) {
+            # rato (lido antes do KeyAvailable, que deita fora os eventos que nao sao teclas)
+            $mm = [St.Mouse]::Read($InH)
+            if ($mm) {
+                $mx = [St.Mouse]::X + 1; $my = [St.Mouse]::Y + 1; $it = @(Get-Items $v); $start = [Math]::Floor($v.sel / $L.per) * $L.per
+                if ($mm -eq 2) { $mk = New-Key 0 $(if ([St.Mouse]::Wheel -gt 0) { 'UpArrow' } else { 'DownArrow' }); break }
+                $slot = Get-TileAt $mx $my
+                if ($slot -ge 0 -and $start + $slot -lt $it.Count) {
+                    if ($mm -eq 1) { $v.sel = $start + $slot; $mk = New-Key "`r" 'Enter'; break }
+                    if ($v.sel -ne $start + $slot) {
+                        $old = $v.sel; $v.sel = $start + $slot
+                        [Console]::Write((Draw-TileText $it[$old] ($old % $L.per) $false) + (Draw-TileText $it[$v.sel] ($v.sel % $L.per) $true) + (Draw-Filters $v $it))
+                    }
+                }
+                elseif ($mm -eq 1 -and $my -le 3) { $mk = New-Key '/' 'Oem2'; break }   # (a caixa de pesquisa)
+            }
             if (Update-Load $v) {
                 $items = @(Get-Items $v)
                 if ($v.drawn -lt $L.per -and $items.Count -gt [Math]::Floor($v.sel / $L.per) * $L.per + $v.drawn) { Draw-Grid $v } else { [Console]::Write((Draw-Filters $v $items)) }
@@ -964,7 +1062,7 @@ try {
             if ([Console]::WindowWidth -ne $L.W -or [Console]::WindowHeight -ne $L.H) { Draw-Grid $v }
             Start-Sleep -Milliseconds 40
         }
-        $k = Read-Key
+        $k = if ($mk) { $mk } else { Read-Key }
         if ($L.W -lt 60 -or $L.H -lt 24) { if ($k.Key -eq 'Escape' -or $k.KeyChar -eq 'q') { return }; continue main }
         $items = @(Get-Items $v); $n = $items.Count; $old = $v.sel; $reset = $false
         switch ($k.Key) {
@@ -1000,6 +1098,6 @@ try {
     }
 }
 finally {
-    [Console]::Write("$e[0m$e[?25h$e[?1049l")
+    Set-Hints ''; [void][W.Con]::SetConsoleMode($InH, $InMode); [Console]::Write("$e[0m$e[?25h$e[?1049l")
     Get-Job | Where-Object Name -eq 'st' | Remove-Job -Force -ErrorAction SilentlyContinue   # (so os do st: corre dentro do teu shell)
 }
