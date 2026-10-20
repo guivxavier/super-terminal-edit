@@ -1444,7 +1444,7 @@ function st { if (Open-InTab 'st' (@($PwshExe, '-NoLogo', '-File', "$HOME\.confi
 function setup { Clear-FfRegion; $a = $args; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\superterminal-setup.ps1" @a } }
 # hub: pagina web dos teus PCs, so dentro da tailnet (st-hub.ps1 ouve no IP Tailscale deste PC)
 #   hub        -> abre a pagina          hub on  -> este PC passa a servir o hub (arranca com a sessao; pede admin 1x p/ a firewall)
-#   hub off    -> deixa de o servir      hub status
+#   hub off    -> deixa de o servir      hub status      hub cert -> https (Let's Encrypt pelo DNS da Cloudflare)
 function hub([string]$Cmd) {
     $lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\SuperTerminal Hub.lnk"
     $running = { @(Get-CimInstance Win32_Process -Filter "Name='pwsh.exe'" | Where-Object CommandLine -match 'st-hub\.ps1') }
@@ -1462,6 +1462,46 @@ function hub([string]$Cmd) {
             if (-not (& $running)) { Start-Process $PwshExe -ArgumentList '-NoLogo', '-NoProfile', '-File', "$HOME\.config\st-hub.ps1" -WindowStyle Hidden }
             Write-Host "  $([char]0xf00c) hub on this PC: http://$("$(tailscale ip -4 2>$null)".Trim())  (and hub.<your domain> if your Headscale has the DNS record)" -ForegroundColor Green
         }
+        'cert' {
+            # https a serio para hub.<dominio>: Let's Encrypt pelo DNS da Cloudflare (o nome nao existe em publico, por isso
+            # so o desafio DNS-01 serve). certbot no WSL (renova sozinho a cada ~60 dias, systemd); o deploy hook copia o
+            # certificado para ~\.config\superterminal\hub-cert e o hub carrega-o.
+            $tn = try { (tailscale status --json 2>$null | ConvertFrom-Json).CurrentTailnet.Name } catch { '' }
+            if (-not ($tn -match '^[^@\s]+\.[^@\s]+\.[a-z]+$' -and $tn -notmatch '\.ts\.net$')) { Write-Host '  hub cert needs a tailnet on your own domain (Headscale)' -ForegroundColor Yellow; return }
+            $dom = "hub.$($tn -replace '^[^.]+\.')"
+            $env:WSL_UTF8 = '1'; $dist = @(wsl.exe -l -q 2>$null | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -notlike 'docker*' })[0]
+            if (-not $dist) { Write-Host '  needs WSL (setup wsl)' -ForegroundColor Yellow; return }
+            Write-Host "`n  HTTPS for $dom (Let's Encrypt, checked through your Cloudflare DNS)" -ForegroundColor Cyan
+            Write-Host "  1. Cloudflare > My Profile > API Tokens > Create Token > template ""Edit zone DNS"", zone $($dom -replace '^hub\.')" -ForegroundColor DarkGray
+            Write-Host "  2. paste the token below (it is saved only in WSL, /etc/letsencrypt, readable only by root)" -ForegroundColor DarkGray
+            Write-Host "  By going on you accept the Let's Encrypt terms: https://letsencrypt.org/repository/" -ForegroundColor DarkGray
+            $sec = Read-Host '  token (empty = keep the saved one)' -AsSecureString
+            $tok = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+            if ($tok) { $tok.Trim() | wsl.exe -d $dist -u root -- bash -c 'umask 077; mkdir -p /etc/letsencrypt; { printf "dns_cloudflare_api_token = "; tr -d "\r\n"; echo; } > /etc/letsencrypt/cloudflare-hub.ini' }
+            $tok = $null
+            $win = (wsl.exe -d $dist -- wslpath -u ("$HOME\.config\superterminal\hub-cert" -replace '\\', '/')).Trim()
+            $sh = @"
+set -e
+[ -s /etc/letsencrypt/cloudflare-hub.ini ] || { echo 'no token saved yet'; exit 1; }
+command -v certbot >/dev/null && dpkg -s python3-certbot-dns-cloudflare >/dev/null 2>&1 || { apt-get update -qq; DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-dns-cloudflare; }
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/superterminal-hub.sh <<'H'
+#!/bin/sh
+# (SuperTerminal) copia o certificado do hub para o Windows
+case " `$RENEWED_DOMAINS " in *" $dom "*) mkdir -p '$win'; cp -L "`$RENEWED_LINEAGE/fullchain.pem" "`$RENEWED_LINEAGE/privkey.pem" '$win/' ;; esac
+H
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/superterminal-hub.sh
+certbot certonly --non-interactive --agree-tos --register-unsafely-without-email --key-type rsa --dns-cloudflare --dns-cloudflare-credentials /etc/letsencrypt/cloudflare-hub.ini --dns-cloudflare-propagation-seconds 30 -d $dom --keep-until-expiring
+RENEWED_DOMAINS=$dom RENEWED_LINEAGE=/etc/letsencrypt/live/$dom /etc/letsencrypt/renewal-hooks/deploy/superterminal-hub.sh
+systemctl enable --now certbot.timer >/dev/null 2>&1 || true
+"@
+            $sh -replace "`r", '' | wsl.exe -d $dist -u root -- bash
+            if (Test-Path "$HOME\.config\superterminal\hub-cert\fullchain.pem") {
+                & $running | ForEach-Object { Stop-Process -Id $_.ProcessId }; Start-Sleep 2
+                if (Test-Path $lnk) { Start-Process $PwshExe -ArgumentList '-NoLogo', '-NoProfile', '-File', "$HOME\.config\st-hub.ps1" -WindowStyle Hidden }
+                Write-Host "  $([char]0xf00c) https://$dom  (renews by itself)" -ForegroundColor Green
+            } else { Write-Host '  no certificate (see the messages above)' -ForegroundColor Red }
+        }
         'off' { Remove-Item $lnk -ErrorAction Ignore; & $running | ForEach-Object { Stop-Process -Id $_.ProcessId }; Write-Host '  hub off on this PC' -ForegroundColor Green }
         'status' { if (& $running) { Write-Host "  running here$(if (Test-Path $lnk) { ', starts with the session' })" -ForegroundColor Green } else { Write-Host "  not running here$(if (Test-Path $lnk) { ' (starts with the session)' })" -ForegroundColor DarkGray } }
         default {
@@ -1475,7 +1515,7 @@ function hub([string]$Cmd) {
         }
     }
 }
-Register-ArgumentCompleter -CommandName hub -ParameterName Cmd -ScriptBlock { param($c, $p, $w) 'on', 'off', 'status' | Where-Object { $_ -like "$w*" } }
+Register-ArgumentCompleter -CommandName hub -ParameterName Cmd -ScriptBlock { param($c, $p, $w) 'on', 'off', 'status', 'cert' | Where-Object { $_ -like "$w*" } }
 function monitor {Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\st-monitor.ps1" } }   # CPU, GPU, RAM, temperatura e processos dos teus PCs
 Register-ArgumentCompleter -CommandName setup -ScriptBlock { param($c, $p, $w) 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'keys', 'widgets', 'sudo' | Where-Object { $_ -like "$w*" } }
 # ---- app: lancador de apps ----

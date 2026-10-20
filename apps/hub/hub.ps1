@@ -66,31 +66,66 @@ function Get-State {
         pcs = @($Srcs.Values | ForEach-Object { @{ name = $_.name; self = $_.self; err = $_.err; d = $_.d; hist = @($_.hist); stale = [bool]($_.seen -and ((Get-Date) - $_.seen).TotalSeconds -gt 10) } }) } | ConvertTo-Json -Depth 6 -Compress
 }
 
-# ---- HTTP minimo (so GET; TcpListener: nao precisa de urlacl nem de admin) ----
-function Send($c, [int]$code, [string]$type, [byte[]]$body) {
-    $h = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $code $(if ($code -eq 200) { 'OK' } else { 'Not Found' })`r`nContent-Type: $type`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`nConnection: close`r`n`r`n")
-    $st = $c.GetStream(); $st.Write($h, 0, $h.Length); $st.Write($body, 0, $body.Length); $st.Flush()
+# ---- HTTP(S) minimo (so GET; TcpListener: nao precisa de urlacl nem de admin) ----
+# Com certificado (hub cert: Let's Encrypt pelo DNS, ~\.config\superterminal\hub-cert\*.pem) serve https na 443 e a
+# porta 80 so redireciona; sem ele, http na 80.
+$CertDir = "$HOME\.config\superterminal\hub-cert"
+$script:Cert = $null; $script:CertT = $null
+function Get-Cert {
+    $f = "$CertDir\fullchain.pem"; $k = "$CertDir\privkey.pem"
+    if (-not (Test-Path $f) -or -not (Test-Path $k)) { return $null }
+    $t = (Get-Item $f).LastWriteTime
+    if ($t -ne $script:CertT) {   # (renovado: carrega o novo)
+        try {
+            $c = [Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($f, $k)
+            # (no Windows o SslStream precisa da chave num formato persistido: passa por PFX)
+            $script:Cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($c.Export('Pfx')); $script:CertT = $t
+            L "certificate loaded: $($script:Cert.Subject), until $($script:Cert.NotAfter)"
+        } catch { L "certificate: $_" }
+    }
+    $script:Cert
 }
-function Handle($c) {
+function Send($st, [int]$code, [string]$type, [byte[]]$body, [string]$extra = '') {
+    $txt = @{ 200 = 'OK'; 301 = 'Moved Permanently'; 404 = 'Not Found' }[$code]
+    $sec = if ($script:Cert) { "Strict-Transport-Security: max-age=31536000`r`n" } else { '' }
+    $h = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $code $txt`r`nContent-Type: $type`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nX-Content-Type-Options: nosniff`r`n$sec$extra" + "Connection: close`r`n`r`n")
+    $st.Write($h, 0, $h.Length); $st.Write($body, 0, $body.Length); $st.Flush()
+}
+function Handle($c, [bool]$tls) {
     try {
-        $c.ReceiveTimeout = 3000; $st = $c.GetStream(); $buf = [byte[]]::new(8192); $n = $st.Read($buf, 0, $buf.Length)
+        $c.ReceiveTimeout = 3000; $c.SendTimeout = 3000; $st = $c.GetStream()
+        if ($tls) { $ssl = [Net.Security.SslStream]::new($st, $false); $ssl.AuthenticateAsServer($script:Cert); $st = $ssl }
+        $buf = [byte[]]::new(8192); $n = $st.Read($buf, 0, $buf.Length); if ($n -le 0) { return }
         $req = [Text.Encoding]::ASCII.GetString($buf, 0, $n); $path = ($req -split ' ')[1]
-        switch -Regex ($path) {
-            '^/(\?.*)?$' { Send $c 200 'text/html; charset=utf-8' $Page }
-            '^/api/state' { Send $c 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes((Get-State))) }
-            default { Send $c 404 'text/plain' ([Text.Encoding]::ASCII.GetBytes('not found')) }
+        if (-not $tls -and $script:Cert) {
+            # http -> https (com o nome que o browser usou)
+            $hostName = [regex]::Match($req, '(?im)^Host:\s*([^\s:]+)').Groups[1].Value; if (-not $hostName) { $hostName = $ip }
+            Send $st 301 'text/plain' ([byte[]]@()) "Location: https://$hostName$path`r`n"; return
         }
-    } catch { L "request: $_" } finally { $c.Close() }
+        switch -Regex ($path) {
+            '^/(\?.*)?$' { Send $st 200 'text/html; charset=utf-8' $Page }
+            '^/api/state' { Send $st 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes((Get-State))) }
+            default { Send $st 404 'text/plain' ([Text.Encoding]::ASCII.GetBytes('not found')) }
+        }
+    } catch { $x = $_.Exception; while ($x.InnerException) { $x = $x.InnerException }; L "request: $($x.Message)" } finally { $c.Close() }
 }
 
 # so no IP Tailscale (espera que o Tailscale arranque, ex. no inicio da sessao)
 $ip = $null
 while (-not $ip) { $ip = "$(& $Ts ip -4 2>$null)".Trim(); if (-not $ip) { Start-Sleep 5 } }
-$lst = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Parse($ip), $Port)
-try { $lst.Start() } catch { L "cannot listen on ${ip}:$Port ($_)"; throw }
-L "hub on http://${ip}:$Port"; Write-Host "hub on http://${ip}:$Port"
-$acc = $lst.AcceptTcpClientAsync()
+$addr = [Net.IPAddress]::Parse($ip)
+$null = Get-Cert
+$ls = @(@{ l = [Net.Sockets.TcpListener]::new($addr, $Port); tls = $false })
+if ($script:Cert) { $ls += @{ l = [Net.Sockets.TcpListener]::new($addr, 443); tls = $true } }
+foreach ($x in $ls) { try { $x.l.Start(); $x.acc = $x.l.AcceptTcpClientAsync() } catch { L "cannot listen on ${ip}:$($x.l.LocalEndpoint.Port) ($_)"; throw } }
+$msg = if ($script:Cert) { "hub on https://${ip} (http redirects)" } else { "hub on http://${ip}:$Port" }
+L $msg; Write-Host $msg
+$tick = [Diagnostics.Stopwatch]::StartNew()
 while ($true) {
     Update-Srcs
-    if ($acc.Wait(200)) { Handle $acc.Result; $acc = $lst.AcceptTcpClientAsync() }
+    # (de hora a hora: certificado renovado? carrega-o; um certificado novo onde nao havia -> reinicia para abrir a 443)
+    if ($tick.Elapsed.TotalMinutes -ge 60) { $tick.Restart(); $had = [bool]$script:Cert; $null = Get-Cert; if (-not $had -and $script:Cert) { L 'certificate appeared: restart'; foreach ($x in $ls) { $x.l.Stop() }; Start-Process "$PSHOME\pwsh.exe" -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', "Start-Sleep 3; & '$PSCommandPath' -Port $Port"; exit } }
+    $any = $false
+    foreach ($x in $ls) { if ($x.acc.IsCompleted) { $any = $true; Handle $x.acc.Result $x.tls; $x.acc = $x.l.AcceptTcpClientAsync() } }
+    if (-not $any) { Start-Sleep -Milliseconds 100 }
 }
