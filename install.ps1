@@ -198,7 +198,27 @@ $gpus = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue | 
 $realGpu = @($gpus | Where-Object { $_ -match 'NVIDIA|AMD|Radeon|Intel|Qualcomm|Adreno|Arc' }).Count -gt 0
 $feFile = "$Cfg\superterminal\front_end.txt"
 if ($realGpu) { Remove-Item $feFile -ErrorAction SilentlyContinue }
-else { Set-Content $feFile 'Software'; Info "no graphics card with OpenGL ($($gpus -join ', ')): the terminal draws in software" }
+else { Set-Content $feFile 'EGL'; Info "no graphics card with OpenGL ($($gpus -join ', ')): the terminal draws through DirectX (ANGLE)" }
+# a fonte do terminal (letras + os icones do prompt, do cabecalho e das apps): CaskaydiaMono Nerd Font, so para este
+# utilizador, se ainda nao houver (o setup deixa trocar por outra)
+$fontReg = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+$haveFont = @((Get-ItemProperty $fontReg -ErrorAction SilentlyContinue).PSObject.Properties.Name + (Get-ItemProperty 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Fonts' -ErrorAction SilentlyContinue).PSObject.Properties.Name | Where-Object { $_ -like 'CaskaydiaMono*' }).Count -gt 0
+if ($haveFont) { Good 'font: CaskaydiaMono Nerd Font' }
+else {
+    Info 'font: downloading CaskaydiaMono Nerd Font (~40 MB)...'
+    $fz = Join-Path $env:TEMP "CascadiaMono-$Stamp.zip"; $fx = Join-Path $env:TEMP "CascadiaMono-$Stamp"
+    try {
+        Invoke-WebRequest 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaMono.zip' -OutFile $fz -UseBasicParsing
+        Expand-Archive $fz $fx -Force
+        $fd = "$env:LOCALAPPDATA\Microsoft\Windows\Fonts"; New-Item -ItemType Directory $fd -Force | Out-Null
+        foreach ($t in Get-ChildItem $fx -Filter 'CaskaydiaMonoNerdFont-*.ttf') {
+            Copy-Item $t.FullName $fd -Force
+            New-ItemProperty $fontReg -Name "CaskaydiaMono NF $($t.BaseName -replace '^CaskaydiaMonoNerdFont-') (TrueType)" -Value (Join-Path $fd $t.Name) -Force | Out-Null
+        }
+        Good 'font: CaskaydiaMono Nerd Font installed'
+    } catch { Warn "font: could not install it ($($_.Exception.Message)); setup > Font does it later" }
+    finally { Remove-Item $fz, $fx -Recurse -Force -ErrorAction SilentlyContinue }
+}
 Good "$changed of $($Map.Count) files updated"
 if ($backedUp) { Info "$backedUp files that were there are saved in $Backup" }
 # helix le a config de %APPDATA%\helix: uma juncao para ~\.config\helix (so se ainda nao existir)

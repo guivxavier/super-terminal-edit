@@ -57,11 +57,13 @@ config.show_new_tab_button_in_tab_bar = false
 config.inactive_pane_hsb = { saturation = 1.0, brightness = 1.0 }   -- (o cabecalho nunca tem foco: nao o escurecer)
 -- OpenGL: com WebGpu a janela demorava a aparecer depois de escondida (Ctrl+Alt+T); OpenGL pinta em ~10 ms
 -- Sem placa grafica a serio (VM, PC sem drivers) nao ha OpenGL e o WezTerm fechava logo ao abrir ("OpenGL implementation
--- is too old"): o instalador ve isso no Windows e escreve "Software" em ~\.config\superterminal\front_end.txt
+-- is too old"): o instalador ve isso no Windows e escreve "EGL" em ~\.config\superterminal\front_end.txt -> o OpenGL
+-- passa pelo ANGLE (libEGL.dll, que vem com o WezTerm: desenha por DirectX, que numa VM e o WARP do Windows)
 local function pick_front_end()
   local f = io.open(wezterm.home_dir .. '\\.config\\superterminal\\front_end.txt', 'r')
   if not f then return 'OpenGL' end
   local v = (f:read('*l') or ''):match('^%s*(%a+)%s*$'); f:close()
+  if v == 'EGL' then config.prefer_egl = true; return 'OpenGL' end
   if v == 'Software' or v == 'WebGpu' or v == 'OpenGL' then return v end
   return 'OpenGL'
 end
