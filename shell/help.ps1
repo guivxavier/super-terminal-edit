@@ -85,6 +85,9 @@ $KvnHelp = @(
     @{ g = 'shell'; c = 'ff'; s = 'clear the shell / redraw the header'; ins = 'ff'
         use = @(@('ff', 'clear the shell (clear and ctrl+l do the same)'), @('reset', 'like on Linux: fixes a terminal left broken by an app (colours, cursor, mouse) and clears'), @('ffw', 'header live (every 2 s) on / off'))
         notes = @('the header lives in the top pane and redraws itself (live is the default)') }
+    @{ g = 'pcs'; c = 'monitor'; s = 'CPU, GPU, RAM, temperature and processes of your PCs, side by side'; ins = 'monitor'
+        use = @(@('monitor', 'this PC and every PC named in setup > Tailscale (over ssh), every 2 s'))
+        notes = @('a PC that says "not updated there yet" needs super sync first', 'temperature: only where Windows exposes it (not every PC does)') }
     @{ g = 'shell'; c = 'theme'; s = 'change the colours of everything at once'; ins = 'theme'
         use = @(@('theme', 'pick one (with a preview of the colours)'), @('theme one-dark', 'One Dark (the default)'), @('theme catppuccin', 'Catppuccin Mocha'), @('theme tokyo-night', 'Tokyo Night'))
         notes = @('terminal, header, fzf, bat, micro and helix change now; yt / st / setup on their next start') }

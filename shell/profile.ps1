@@ -1387,6 +1387,7 @@ function st { if (Open-InTab 'st' (@($PwshExe, '-NoLogo', '-File', "$HOME\.confi
 
 # ---- setup: contas e escolhas (fonte, Tailscale, YouTube, Stremio, logo, sudo) -> ~\.config\superterminal-setup.ps1 ----
 function setup { Clear-FfRegion; $a = $args; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\superterminal-setup.ps1" @a } }
+function monitor { Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\st-monitor.ps1" } }   # CPU, GPU, RAM, temperatura e processos dos teus PCs
 Register-ArgumentCompleter -CommandName setup -ScriptBlock { param($c, $p, $w) 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'keys', 'widgets', 'sudo' | Where-Object { $_ -like "$w*" } }
 # ---- app: lancador de apps ----
 #   app            -> escolher com fzf        app <nome>      -> abrir
