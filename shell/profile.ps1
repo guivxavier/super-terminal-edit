@@ -1472,11 +1472,15 @@ function hub([string]$Cmd) {
             $env:WSL_UTF8 = '1'; $dist = @(wsl.exe -l -q 2>$null | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -notlike 'docker*' })[0]
             if (-not $dist) { Write-Host '  needs WSL (setup wsl)' -ForegroundColor Yellow; return }
             Write-Host "`n  HTTPS for $dom (Let's Encrypt, checked through your Cloudflare DNS)" -ForegroundColor Cyan
-            Write-Host "  1. Cloudflare > My Profile > API Tokens > Create Token > template ""Edit zone DNS"", zone $($dom -replace '^hub\.')" -ForegroundColor DarkGray
-            Write-Host "  2. paste the token below (it is saved only in WSL, /etc/letsencrypt, readable only by root)" -ForegroundColor DarkGray
             Write-Host "  By going on you accept the Let's Encrypt terms: https://letsencrypt.org/repository/" -ForegroundColor DarkGray
-            $sec = Read-Host '  token (empty = keep the saved one)' -AsSecureString
-            $tok = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+            # token da Cloudflare (DNS:Edit na zona): o do DNS dinamico (~\.config\cf-token.txt) se existir, senao pede-o
+            $cf = "$HOME\.config\cf-token.txt"
+            $tok = if (Test-Path $cf) { Write-Host "  using the Cloudflare token in $cf" -ForegroundColor DarkGray; (Get-Content $cf -Raw).Trim() } else {
+                Write-Host "  Cloudflare > My Profile > API Tokens > Create Token > template ""Edit zone DNS"", zone $($dom -replace '^hub\.')" -ForegroundColor DarkGray
+                Write-Host '  paste it below (saved only in WSL, /etc/letsencrypt, readable only by root)' -ForegroundColor DarkGray
+                $sec = Read-Host '  token (empty = keep the saved one)' -AsSecureString
+                [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+            }
             if ($tok) { $tok.Trim() | wsl.exe -d $dist -u root -- bash -c 'umask 077; mkdir -p /etc/letsencrypt; { printf "dns_cloudflare_api_token = "; tr -d "\r\n"; echo; } > /etc/letsencrypt/cloudflare-hub.ini' }
             $tok = $null
             $win = (wsl.exe -d $dist -- wslpath -u ("$HOME\.config\superterminal\hub-cert" -replace '\\', '/')).Trim()
