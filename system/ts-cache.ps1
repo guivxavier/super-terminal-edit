@@ -9,8 +9,10 @@ try {
     $j = & $ts status --json 2>$null | ConvertFrom-Json
     if ($j.BackendState -ne 'Running') { $lines += "$e[90mtailscale stopped ($($j.BackendState))" }
     else {
-        $nodes = @($j.Self) + @($j.Peer.PSObject.Properties.Value)
-        $dup = $nodes | Group-Object HostName | Where-Object Count -gt 1 | ForEach-Object Name
+        # (Headscale: pode haver nos sem nome nem IP, e um nome repetido ganha "-1": o WSL de "pc" chama-se "pc-1")
+        $nodes = @(@($j.Self) + @($j.Peer.PSObject.Properties.Value) | Where-Object { $_.HostName -and $_.TailscaleIPs })
+        $base = { "$($_.HostName)".ToLower() -replace '-\d+$' }
+        $dup = $nodes | Group-Object $base | Where-Object Count -gt 1 | ForEach-Object Name
         $on = @($nodes | Where-Object Online).Count
         $lines += "$e[32m$on$e[0m$e[90m/$e[0m$($nodes.Count)  $e[90m$($j.CurrentTailnet.Name)"
         # os PCs com nome (setup > Tailscale: ~\.config\superterminal\pcs.json) primeiro, pela ordem de la, com esse
@@ -19,12 +21,14 @@ try {
         # (no Windows PowerShell 5.1 o ConvertFrom-Json da a lista como um so objeto: o ForEach desfaz)
         if (Test-Path $pf) { try { $pcs = @(Get-Content $pf -Raw | ConvertFrom-Json | ForEach-Object { $_ }) } catch {} }
         $hosts = @($pcs | ForEach-Object { "$($_.host)".ToLower() })
-        $order = { $i = [array]::IndexOf($hosts, "$($_.HostName)".ToLower()); if ($i -lt 0) { 99 } elseif ($_.OS -eq 'linux') { 50 + $i } else { $i } }
+        $hostOf = { param($n) $h = "$($n.HostName)".ToLower(); if ($n.OS -eq 'linux' -and ($h -replace '-\d+$') -in $dup) { $h -replace '-\d+$' } else { $h } }
+        $order = { $i = [array]::IndexOf($hosts, (& $hostOf $_)); if ($i -lt 0) { 99 } elseif ($_.OS -eq 'linux') { 50 + $i } else { $i } }
         foreach ($n in $nodes | Sort-Object $order, HostName) {
             # nome na coluna das etiquetas (ESC[11D recua o cursor ate ao inicio da etiqueta)
-            $label = $n.HostName
-            $i = [array]::IndexOf($hosts, "$($n.HostName)".ToLower()); if ($i -ge 0) { $label = $pcs[$i].name }
-            if ($n.HostName -in $dup -and $n.OS -eq 'linux') { $label = "$label-wsl" }
+            $h = & $hostOf $n; $label = $h
+            $i = [array]::IndexOf($hosts, $h); if ($i -ge 0) { $label = $pcs[$i].name }
+            if ($h -in $dup -and $n.OS -eq 'linux') { $label = "$label-wsl" }
+            if ($label.Length -gt 11) { $label = $label.Substring(0, 10) + '~' }   # (cabe na coluna: so ASCII)
             $ip = $n.TailscaleIPs | Where-Object { $_ -notlike '*:*' } | Select-Object -First 1
             $self = $n.ID -eq $j.Self.ID
             if ($n.Online -or $self) { $st = 'online'; $sc = '32' } else { $st = 'offline'; $sc = '90' }
