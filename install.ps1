@@ -161,7 +161,7 @@ $Map = @(
     @('system\ts-cache.ps1', "$Cfg\ts-cache.ps1"), @('system\ts-cache.vbs', "$Cfg\ts-cache.vbs"), @('system\setup-sshd.ps1', "$Cfg\setup-sshd.ps1"),
     @('terminal\wezterm\wezterm.lua', "$Cfg\wezterm\wezterm.lua"), @('terminal\wezterm\header.ps1', "$Cfg\wezterm\header.ps1"),
     @('terminal\setup\setup.ps1', "$Cfg\superterminal-setup.ps1"),
-    @('wsl\zshrc', "$Cfg\wsl\kvn.zshrc")
+    @('wsl\zshrc', "$Cfg\wsl\kvn.zshrc"), @('wsl\bashrc', "$Cfg\wsl\kvn.bashrc"), @('wsl\setup-wsl.sh', "$Cfg\wsl\setup-wsl.sh"), @('wsl\ts-line.sh', "$Cfg\wsl\ts-line.sh")
 )
 # (pessoais: so se ainda nao existirem - o logo e as colunas do cabecalho de cada PC ficam)
 $KeepIfThere = @('config\fastfetch\config.jsonc', 'config\fastfetch\config-hw.jsonc', 'config\fastfetch\config-live.jsonc')

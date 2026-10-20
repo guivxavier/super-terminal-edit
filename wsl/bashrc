@@ -1,0 +1,41 @@
+# Visual do WSL igual ao PowerShell do Windows (prompt, fastfetch, atalhos)
+case $- in *i*) ;; *) return ;; esac
+export PATH="$HOME/.local/bin:$PATH"
+# (ble.sh desligado: demasiado lento)
+
+# prompt: [wsl] [root] kvn@host pasta [branch git]
+__git_branch() {
+    local d=$PWD h
+    while [ -n "$d" ]; do
+        if [ -f "$d/.git/HEAD" ]; then
+            read -r h < "$d/.git/HEAD"
+            case $h in ref:\ refs/heads/*) printf ' \001\e[90m\002%s' "${h#ref: refs/heads/}" ;; *) printf ' \001\e[90m\002%s' "${h:0:7}" ;; esac
+            return
+        fi
+        d=${d%/*}
+    done
+}
+__root=''; [ "$EUID" -eq 0 ] && __root='\[\e[1;31m\]root '
+PS1="\[\e[1;32m\]\[\e[0m\] \[\e[1;32m\]wsl $__root\[\e[0;35m\]\u\[\e[90m\]@\[\e[34m\]\h \[\e[36m\]\w\$(__git_branch) \[\e[0m\]"
+
+# fastfetch (em terminais estreitos so limpa)
+ff() { clear; [ "$(tput cols)" -ge 90 ] && { fastfetch "$@"; printf '\e[90m%s\e[0m\n' "$(printf '%*s' "$(tput cols)" '' | sed 's/ /─/g')"; }; }
+ffw() { clear; fastfetch --watch "$@"; }
+alias clear=ff cls=ff
+if [[ ${BLE_VERSION-} ]]; then
+    ble-bind -m auto_complete -f TAB auto_complete/insert   # Tab aceita a sugestao (como no PowerShell)
+    ble-bind -c C-l ff
+    ble-bind -c C-w exit                                    # igual ao PowerShell: Ctrl+W sai/fecha
+elif [ -t 0 ]; then
+    bind -x '"\C-l": ff'
+    bind -x '"\C-w": exit'
+fi
+
+# ferramentas
+command -v eza >/dev/null && { alias ls='eza --icons --group-directories-first'; alias ll='eza -la --icons --group-directories-first --git'; alias lt='eza --tree --level=2 --icons'; }
+command -v bat >/dev/null && alias cat='bat --paging=never'
+command -v zoxide >/dev/null && eval "$(zoxide init bash)"
+
+cd ~    # abre sempre na home (o WSL herda a pasta do Windows)
+ff
+[[ ${BLE_VERSION-} ]] && ble-attach

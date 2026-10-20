@@ -52,7 +52,12 @@ PROMPT='%B%F{green}%f%b %B%F{green}wsl%f%b %(!.%B%F{red}root%f%b .)%F{magenta}%n
 typeset -g FF_TOP=
 __ff_free() { print -n '\e7\e[r\e8' }
 __cursor_row() { local pos; print -n '\e[6n' > /dev/tty; read -rs -d R pos < /dev/tty; pos=${pos#*\[}; print -r -- ${pos%%;*} }
-__other_pc() { [[ ${HOST:l} == desktop* ]] && print laptop || print desktop }
+# os teus PCs (setup > Tailscale: ~\.config\superterminal\pcs.json, "nome" e "host" = o nome no Tailscale)
+__pcs_file=$WINHOME/.config/superterminal/pcs.json
+__pcs() { [[ -r $__pcs_file ]] && tr -d '\r' < $__pcs_file | grep -o '"name": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/' }
+__pc_of_host() { [[ -r $__pcs_file ]] && tr -d '\r' < $__pcs_file | awk -v h="${1:l}" -F'"' '/"name"/ { n = $4 } /"host"/ { if (tolower($4) == h) print n }' }
+__other_pc() { local me=$(__pc_of_host ${HOST:l}) p; for p in $(__pcs); do [[ $p != $me ]] && { print $p; return }; done }
+__pc_icon() { local n=${1:-$(__pc_of_host ${HOST:l})}; n=${n:-$HOST}; [[ ${n:l} == *(lap|book|note)* ]] && print -n $'' || print -n $'' }   # sem argumento: este PC
 __show_cheats() {
     (( COLUMNS >= 162 )) || return
     local o=$(__other_pc) e=$'\e' r=1 out=$'\e7' dot=$'\e[90m · \e[36m' line
@@ -61,7 +66,7 @@ __show_cheats() {
     __cheat_group() { rows+=("  ${e}[${1}m${2}  ${(r:7:)3}${e}[36m${4// . /$dot}${e}[0m") }   # cor icone nome 'cmd . cmd'
     __cheat_group 33 $'' apps 'app . app add . app ren'
     __cheat_group 31 $'' media 'yt . st'
-    __cheat_group 34 $'' pcs "ssh $o . get . send . rls${${o:#laptop}:+ . wake . suspend}"
+    __cheat_group 34 $'' pcs "ssh ${o:-<pc>} . get . send . rls . wake . suspend"
     __cheat_group 32 $'' files 'ls . la . ll . z . cpwd . view . fetch'
     __cheat_group 36 $'' win '~ws . ~desk . ~dl . ~docs . ~win'
     __cheat_group 35 $'' shell 'ff . ffw . exit'
@@ -85,16 +90,16 @@ win() { local c=$1; shift; __ff_free; KVN_CMD=1 COLUMNS=$COLUMNS WSLENV="KVN_CMD
 view() {
     [[ -e $1 ]] || { print -P "%F{yellow}!%f '$1' doesn't exist"; return 1 }
     local p=$(wslpath -w "${1:A}")
-    if [[ ${1:l} == *.pdf ]]; then __wt -w 0 nt --title view 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\view.ps1" "$p"
+    if [[ ${1:l} == *.pdf ]]; then __wz spawn -- 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\view.ps1" "$p"
     else KVN_CMD=1 COLUMNS=$COLUMNS LINES=$LINES WSLENV="KVN_CMD:COLUMNS:LINES:$WSLENV" '/mnt/c/Program Files/PowerShell/7/pwsh.exe' -NoLogo -NoProfile -File "$(wslpath -w $WINHOME)\\.config\\view.ps1" "$p"; fi
 }
 for __c in get send rls wake suspend app; do eval "$__c() { win $__c \"\$@\" }"; done; unset __c
 # yt / st precisam de teclado e imagens a serio: abrem num separador novo do Windows Terminal
-__wt() { local w; for w in "$WINHOME/AppData/Local/Microsoft/WindowsApps/wt.exe" "$WINHOME/.local/terminal/wt.exe"; do [[ -e $w ]] && { "$w" "$@"; return }; done; print -P '%F{yellow}!%f Windows Terminal not found' }
-yt() { __wt -w 0 nt --title yt 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\yt-tui.ps1" "$@" }
-st() { __wt -w 0 nt --title st 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\st-tui.ps1" "$@" }
+__wz() { "$WINHOME/.local/wezterm/wezterm.exe" cli "$@" }   # abre separadores/paineis na janela do SuperTerminal
+yt() { __wz spawn -- 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\yt-tui.ps1" "$@" }
+st() { __wz spawn -- 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\st-tui.ps1" "$@" }
 # ssh desktop / ssh laptop com o ssh.exe do Windows (usa as chaves e o ssh-agent do Windows; a do laptop tem passphrase)
-ssh() { if (( $# == 1 )) && [[ $1 == (desktop|laptop) ]]; then __ff_free; /mnt/c/Windows/System32/OpenSSH/ssh.exe -t $1 'pwsh -NoLogo'; ff; else command ssh "$@"; fi }
+ssh() { if (( $# == 1 )) && (( ${${(f)"$(__pcs)"}[(Ie)$1]} )); then __ff_free; /mnt/c/Windows/System32/OpenSSH/ssh.exe -t $1 'pwsh -NoLogo'; ff; else command ssh "$@"; fi }
 cpwd() { local p=${1:+${1:A}}; p=${p:-$PWD}; print -rn -- $p | clip.exe; print -P "  %F{green}✓%f copied  %F{8}$p%f" }
 
 # ---- ls igual ao rls: PC + caminho + total, depois icone, nome, tamanho, data (ll / lt continuam no eza) ----
@@ -124,7 +129,7 @@ ls() {
     local tot=0 f s m n; local -a lines
     for f in $dirs; do zstat -F '%d/%m/%y %H:%M' -A m +mtime -- $d/$f; n=$f; (( ${#n} > nw )) && n="${n[1,nw-1]}…"; lines+=("  $(__icon $f 1)\e[0m  \e[1;34m${(r:nw:)n}\e[0m  \e[36m         \e[0m  \e[90m$m\e[0m"); done
     for f in $files; do zstat -A s +size -- $d/$f 2>/dev/null || s=0; zstat -F '%d/%m/%y %H:%M' -A m +mtime -- $d/$f 2>/dev/null; (( tot += s )); n=$f; (( ${#n} > nw )) && n="${n[1,nw-1]}…"; lines+=("  $(__icon $f 0)\e[0m  \e[97m${(r:nw:)n}\e[0m  \e[36m${(l:9:)$(__size $s)}\e[0m  \e[90m$m\e[0m"); done
-    local ic=$''; [[ ${HOST:l} == desktop* ]] && ic=$''
+    local ic=$(__pc_icon)
     print
     print -- "  \e[1;97m$ic  wsl ${HOST:l}\e[0m  \e[37m${d:A}\e[0m   \e[90m$(( ${#dirs} + ${#files} )) items$( (( tot )) && print -n "  ·  $(__size $tot)")\e[0m"
     print -- "  \e[90m${(l:nw+30::─:)}\e[0m"
@@ -196,7 +201,7 @@ __dir_menu() {
     local e=$'\e' bc=$'\e[38;2;75;82;99m' sel=1 off=0 last='' key rest pre wo wx po base dir n d row col p
     local -a dirs names rights h1 h2
     local k j nm pat o W H x0=3 maxn host=${HOST:l} cnt bw x1 vis need hl keys
-    local pcic=$''; [[ ${HOST:l} == desktop* ]] && pcic=$''
+    local pcic=$(__pc_icon)
     # (desenha por posicao absoluta: linha/coluna do cursor perguntadas ao terminal; no fim o cursor volta ao sitio)
     __dm_clear() { print -rn -- "${e}[$(( row + 1 ));1H${e}[J${e}[${row};${col}H${e}[?25h" > /dev/tty }
     TRAPINT() { __dm_clear; LBUFFER=''; zle reset-prompt; return 130 }
@@ -270,7 +275,7 @@ bindkey '^@' __dir_menu '^H' __ctrl_bs
 __tab() { zle expand-or-complete }   # Tab = completar (sem sugestoes cinzentas)
 __ctrl_w() { exit }                                                                                   # Ctrl+W sai/fecha
 __ctrl_l() { ff; zle reset-prompt }                                                                   # Ctrl+L = limpa
-__ctrl_d() { __wt -w 0 sp wsl.exe -d $WSL_DISTRO_NAME --cd ~ >/dev/null 2>&1; sleep 0.4; ff; zle reset-prompt }   # Ctrl+D divide (so no prompt)
+__ctrl_d() { __wz split-pane -- wsl.exe -d $WSL_DISTRO_NAME --cd ~ >/dev/null 2>&1; sleep 0.4; ff; zle reset-prompt }   # Ctrl+D divide (so no prompt)
 zle -N __tab; zle -N __ctrl_w; zle -N __ctrl_l; zle -N __ctrl_d
 bindkey '^I' __tab '^W' __ctrl_w '^L' __ctrl_l '^D' __ctrl_d
 bindkey '^[[1;5C' forward-word '^[[1;5D' backward-word '^[[H' beginning-of-line '^[[F' end-of-line '^[[3~' delete-char

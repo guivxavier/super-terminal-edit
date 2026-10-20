@@ -710,7 +710,47 @@ function Edit-Logo {
     } finally { [void][Su.Con]::SetConsoleMode($inH, $mode0) }
 }
 
-# ---------- 6. sudo ----------
+# ---------- 6. WSL ----------
+$env:WSL_UTF8 = '1'   # (sem isto o wsl.exe escreve em UTF-16)
+function Get-Distro {
+    if (-not (Get-Command wsl.exe -ErrorAction Ignore)) { return }
+    $l = @(wsl.exe -l -q 2>$null); if ($LASTEXITCODE) { return }   # (sem distros: escreve uma mensagem e sai com erro)
+    @($l | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -notlike 'docker*' -and $_ -notmatch '\s' })[0]
+}
+function Invoke-Wsl([string]$cmd) { $d = Get-Distro; if ($d) { wsl.exe -d $d -- bash -c $cmd 2>$null } }
+$WslPage = @{
+    icon = [char]0xe712; title = 'WSL (Linux)'
+    intro = @('Ubuntu inside Windows. In SuperTerminal it gets the same look, prompt and shortcuts (zsh);',
+        'outside it, WSL stays exactly as it was.')
+    steps = @(
+        @{ t = 'Install WSL with Ubuntu'
+            d = @('i  installs it (Windows asks for admin). It may ask you to restart the PC: then open setup again.')
+            done = { [bool](Get-Distro) }; every = 5
+            note = { Get-Distro }
+            acts = @(, @('i', 'install', { try { Start-Process wsl.exe -Verb RunAs -Wait -ArgumentList '--install', '-d', 'Ubuntu' } catch { $script:Msg = "$e[33mcancelled" } }))
+        },
+        @{ t = 'Create your Linux user'
+            d = @('o  opens Ubuntu here: pick a user name and a password (it is only for Linux, sudo asks for it).',
+                'When you see the prompt, type exit.')
+            done = { $u = Invoke-Wsl 'id -u'; $u -and [int]"$u".Trim() -ne 0 }; every = 5
+            note = { "$(Invoke-Wsl 'whoami')".Trim() }
+            acts = @(, @('o', 'open Ubuntu', { [Console]::Write("$e[?25h"); wsl.exe -d (Get-Distro); [Console]::Write("$e[?25l") }))
+        },
+        @{ t = 'SuperTerminal look in WSL'
+            d = @('i  installs zsh and the tools (sudo asks for your Linux password once) and links the',
+                'SuperTerminal config. It only applies inside SuperTerminal.')
+            done = { "$(Invoke-Wsl 'command -v zsh >/dev/null && grep -q kvn.zshrc ~/.zshrc && echo y')".Trim() -eq 'y' }; every = 5
+            acts = @(, @('i', 'set it up', {
+                        [Console]::Write("$e[?25h"); $d = Get-Distro
+                        $sh = (wsl.exe -d $d -- wslpath -u ("$Cfg\wsl\setup-wsl.sh" -replace '\\', '/')).Trim()
+                        wsl.exe -d $d -- bash $sh; [Console]::Write("$e[?25l"); Pause-Key
+                    }))
+        }
+    )
+    end = 'WSL ready: open it from the + menu (or type wsl)'
+}
+
+# ---------- 7. sudo ----------
 function Get-SudoMode { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo' -ErrorAction Ignore).Enabled }
 $SudoPage = if ([Environment]::OSVersion.Version.Build -ge 22000) {
     @{ icon = [char]0xf132; title = 'sudo'
@@ -746,6 +786,8 @@ $Steps = [ordered]@{
         check = { if (Test-Path $StremioAuth) { $m = if (Test-Path "$StCfg\stremio-mode.txt") { if ((Get-Content "$StCfg\stremio-mode.txt") -eq 'rd') { ' · Real-Debrid' } else { ' · without debrid' } }; @{ ok = $true; text = "signed in$m" } } else { @{ ok = $false; text = 'not set up' } } } }
     logo = @{ icon = [char]0xf03e; name = 'Header logo'; run = { Edit-Logo }
         check = { $l = Get-Logo; if ($l.lines.Count) { @{ ok = $true; text = "$($l.lines.Count) lines · $($l.colors -join ' / ')" } } else { @{ ok = $false; text = 'no logo' } } } }
+    wsl = @{ icon = [char]0xe712; name = 'WSL (Linux)'; run = { Show-Guide $WslPage }
+        check = { $d = Get-Distro; if (-not $d) { @{ ok = $false; text = 'not installed (optional)' } } elseif ("$(Invoke-Wsl 'grep -q kvn.zshrc ~/.zshrc && echo y')".Trim() -eq 'y') { @{ ok = $true; text = $d } } else { @{ ok = $false; text = "$d · not linked yet" } } } }
     sudo = @{ icon = [char]0xf132; name = 'sudo'; run = { Show-Guide $SudoPage }
         check = {
             if ([Environment]::OSVersion.Version.Build -ge 22000) { switch ([int](Get-SudoMode)) { 3 { @{ ok = $true; text = 'inline' } } 0 { @{ ok = $false; text = 'off' } } default { @{ ok = $true; text = 'on (inline is nicer)' } } } }
