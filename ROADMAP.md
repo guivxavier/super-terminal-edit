@@ -50,6 +50,7 @@ Known rough edges, from use:
 - [ ] Everything a Claude process installs under `%APPDATA%` is virtualized (MSIX): the installer must not depend on that.
 
 ## Phase 3: Hub (website on the tailnet)
+- [x] **First version** (`hub`, `apps/hub`): one PC serves a read-only page (PCs with live CPU / GPU / RAM / temperature and processes, the tailnet devices), listening only on its Tailscale IP; `hub on` starts it with the session. With Headscale, an `extra_records` A record gives it a name (hub.kvnterm.com) that exists only inside the tailnet. Next: actions (wake / suspend), files, clipboard, HTTPS.
 An always-on service on each PC, reachable only inside the Tailscale mesh, to manage the PCs from a browser (also from the phone).
 
 Ideas, to prioritize together:

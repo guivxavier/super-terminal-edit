@@ -1454,7 +1454,8 @@ function hub([string]$Cmd) {
                 # so a partir da tailnet (100.64.0.0/10), porta 80
                 $ps = "New-NetFirewallRule -Name 'SuperTerminal-Hub' -DisplayName 'SuperTerminal Hub (tailnet only)' -Direction Inbound -Protocol TCP -LocalPort 80 -RemoteAddress 100.64.0.0/10 -Action Allow | Out-Null"
                 Write-Host '  Windows asks for admin once: the firewall rule (port 80, only from the tailnet)' -ForegroundColor DarkGray
-                try { Start-Process $PwshExe -Verb RunAs -Wait -ArgumentList '-NoProfile', '-EncodedCommand', ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))) } catch { Write-Host '  cancelled' -ForegroundColor Yellow; return }
+                # (sem ela muitas vezes ja funciona: o Tailscale abre a sua rede; cancelar nao impede o hub)
+                try { Start-Process $PwshExe -Verb RunAs -Wait -ArgumentList '-NoProfile', '-EncodedCommand', ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))) } catch { Write-Host '  no firewall rule (if other PCs cannot open the hub, run hub on again and accept)' -ForegroundColor Yellow }
             }
             $w = New-Object -ComObject WScript.Shell; $s = $w.CreateShortcut($lnk)
             $s.TargetPath = $PwshExe; $s.Arguments = "-NoLogo -NoProfile -WindowStyle Hidden -File `"$HOME\.config\st-hub.ps1`""; $s.WindowStyle = 7; $s.Save()

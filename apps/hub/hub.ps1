@@ -49,8 +49,14 @@ function Get-Tailnet {
     $script:TailT = Get-Date
     $script:Tail = try {
         $j = & $Ts status --json 2>$null | ConvertFrom-Json
-        @{ name = $j.CurrentTailnet.Name; nodes = @(@($j.Self) + @($j.Peer.PSObject.Properties.Value) | Where-Object { $_.HostName -and $_.TailscaleIPs } | ForEach-Object {
-                    @{ host = $_.HostName; os = $_.OS; online = [bool]($_.Online -or $_.ID -eq $j.Self.ID); ip = @($_.TailscaleIPs | Where-Object { $_ -notlike '*:*' })[0]; self = $_.ID -eq $j.Self.ID; seen = "$($_.LastSeen)" } }) }
+        $ns = @(@($j.Self) + @($j.Peer.PSObject.Properties.Value) | Where-Object { $_.HostName -and $_.TailscaleIPs })
+        # nomes como no cabecalho: o do pcs.json; o WSL de um PC (mesmo nome, ou "<pc>-1" no Headscale) = "<nome>-wsl"
+        $pcs = @(Get-Pcs); $hosts = @($pcs | ForEach-Object { "$($_.host)".ToLower() })
+        $dup = @($ns | Group-Object { "$($_.HostName)".ToLower() -replace '-\d+$' } | Where-Object Count -gt 1 | ForEach-Object Name)
+        $label = { param($n) $h = "$($n.HostName)".ToLower(); $wsl = $n.OS -eq 'linux' -and ($h -replace '-\d+$') -in $dup; if ($wsl) { $h = $h -replace '-\d+$' }
+            $i = [array]::IndexOf($hosts, $h); $l = if ($i -ge 0) { $pcs[$i].name } else { $n.HostName }; if ($wsl) { "$l-wsl" } else { $l } }
+        @{ name = $j.CurrentTailnet.Name; nodes = @($ns | ForEach-Object {
+                    @{ host = (& $label $_); os = $_.OS; online = [bool]($_.Online -or $_.ID -eq $j.Self.ID); ip = @($_.TailscaleIPs | Where-Object { $_ -notlike '*:*' })[0]; self = $_.ID -eq $j.Self.ID; seen = "$($_.LastSeen)" } }) }
     } catch { $null }
     $script:Tail
 }
