@@ -780,6 +780,61 @@ function Update-TsCache([int]$MaxAge = 30) {
         [Diagnostics.Process]::Start('wscript.exe', "`"$HOME\.config\ts-cache.vbs`"") | Out-Null
     }
 }
+# widgets do cabecalho (setup > Header widgets -> ~\.config\superterminal\widgets.json): o cabecalho chama isto a
+# cada redesenho; cada widget escreve %LOCALAPPDATA%\pwsh-init-cache\w-<nome>.txt e o fastfetch le-o (seccao "today")
+$WidgetsFile = "$HOME\.config\superterminal\widgets.json"
+function Update-Widgets {
+    if (-not (Test-Path $WidgetsFile)) { return }
+    $w = try { Get-Content $WidgetsFile -Raw | ConvertFrom-Json } catch { return }
+    $dir = "$env:LOCALAPPDATA\pwsh-init-cache"; $old = { param($n, $s) $f = "$dir\w-$n.txt"; -not (Test-Path $f) -or ([datetime]::Now - [IO.File]::GetLastWriteTime($f)).TotalSeconds -gt $s }
+    $e = [char]27
+    # musica: rapido (titulo da janela), aqui mesmo
+    if ($w.enabled -contains 'music' -and (& $old 'music' 2)) {
+        $t = @(Get-Process Spotify, mpv -ErrorAction Ignore | Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle -notmatch '^Spotify( Premium| Free)?$' } | ForEach-Object { $_.MainWindowTitle -replace ' - mpv$' })[0]
+        [IO.File]::WriteAllText("$dir\w-music.txt", $(if ($t) { "$e[37m$($t.Substring(0, [Math]::Min(48, $t.Length)))" } else { "$e[90mnothing playing" }))
+    }
+    if ($w.enabled -contains 'backup' -and $w.backup -and (& $old 'backup' 600)) {
+        $f = Get-ChildItem -LiteralPath $w.backup -Recurse -Depth 2 -File -ErrorAction Ignore | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $txt = if (-not $f) { "$e[31mno files in $($w.backup)" } else {
+            $h = ([datetime]::Now - $f.LastWriteTime).TotalHours
+            $ago = if ($h -lt 1) { "$([int]($h * 60)) min ago" } elseif ($h -lt 48) { "$([int]$h) h ago" } else { "$([int]($h / 24)) days ago" }
+            "$e[$(if ($h -lt 26) { '32' } elseif ($h -lt 168) { '33' } else { '31' })m$ago" }
+        [IO.File]::WriteAllText("$dir\w-backup.txt", $txt)
+    }
+    # meteo e calendario: pela rede, num job (o cabecalho nao espera)
+    $net = @()
+    if ($w.enabled -contains 'weather' -and (& $old 'weather' 1800)) { $net += 'weather' }
+    if ($w.enabled -contains 'calendar' -and $w.ics -and (& $old 'calendar' 600)) { $net += 'calendar' }
+    if ($net -and -not (Get-Job -Name st-widgets -ErrorAction Ignore | Where-Object State -eq 'Running')) {
+        Get-Job -Name st-widgets -ErrorAction Ignore | Remove-Job -Force
+        foreach ($n in $net) { [IO.File]::SetLastWriteTime($(if (Test-Path "$dir\w-$n.txt") { "$dir\w-$n.txt" } else { New-Item "$dir\w-$n.txt" -Force | ForEach-Object FullName }), [datetime]::Now) }   # (nao repete enquanto corre)
+        $null = Start-ThreadJob -Name st-widgets -ArgumentList $net, $w, $dir -ScriptBlock {
+            param($net, $w, $dir) $e = [char]27
+            if ($net -contains 'weather') {
+                $r = try { (Invoke-RestMethod "https://wttr.in/$([uri]::EscapeDataString("$($w.city)"))?format=%c%t+%C&m" -TimeoutSec 10).Trim() } catch { $null }
+                if ($r -and $r -notmatch 'Unknown|Sorry|<') { [IO.File]::WriteAllText("$dir\w-weather.txt", "$e[37m$r") }
+            }
+            if ($net -contains 'calendar') {
+                # ponytail: so eventos simples (sem RRULE); recorrentes precisam de um parser de iCal a serio
+                $ics = try { Invoke-RestMethod $w.ics -TimeoutSec 15 } catch { $null }
+                if ($ics) {
+                    $now = [datetime]::Now; $best = $null
+                    foreach ($ev in ("$ics" -replace "`r?`n[ `t]", '' -split 'BEGIN:VEVENT' | Select-Object -Skip 1)) {
+                        $m = [regex]::Match($ev, '(?m)^DTSTART[^:]*:(\d{8})(T(\d{6})(Z?))?'); if (-not $m.Success) { continue }
+                        $d = [datetime]::ParseExact($m.Groups[1].Value + $(if ($m.Groups[3].Value) { $m.Groups[3].Value } else { '000000' }), 'yyyyMMddHHmmss', $null)
+                        if ($m.Groups[4].Value) { $d = [DateTime]::SpecifyKind($d, 'Utc').ToLocalTime() }
+                        if ($d -lt $now -or $d -gt $now.AddDays(7)) { continue }
+                        if (-not $best -or $d -lt $best.d) { $best = @{ d = $d; s = [regex]::Match($ev, '(?m)^SUMMARY[^:]*:(.*)$').Groups[1].Value.Trim() -replace '\\,', ',' -replace '\\n', ' '; allday = -not $m.Groups[3].Value } }
+                    }
+                    $txt = if (-not $best) { "$e[90mnothing in the next 7 days" } else {
+                        $day = if ($best.d.Date -eq $now.Date) { 'today' } elseif ($best.d.Date -eq $now.Date.AddDays(1)) { 'tomorrow' } else { $best.d.ToString('ddd') }
+                        "$e[37m$day$(if (-not $best.allday) { ' ' + $best.d.ToString('HH:mm') })  $e[97m$($best.s.Substring(0, [Math]::Min(40, $best.s.Length)))" }
+                    [IO.File]::WriteAllText("$dir\w-calendar.txt", $txt)
+                }
+            }
+        }
+    }
+}
 # (no WezTerm o cabecalho ja a mantem a cada 5 s: lancar o processo aqui custava ~70 ms a cada separador novo)
 if (-not $env:WEZTERM_PANE) { Update-TsCache }
 # página inicial do 'yt' preparada em segundo plano (para abrir logo); só com sessão iniciada e se tiver > 15 min

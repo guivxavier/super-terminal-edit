@@ -20,11 +20,12 @@ while ($true) {
         $profT = $pt; HLog 'perfil mudou: recarregar'; . $PROFILE.CurrentUserCurrentHost; $FfLines = $null; $W = 0
     }
     # pedido de redesenho (um programa ampliado acabou: Invoke-Zoomed no perfil)
-    if ([IO.File]::Exists("$env:TEMP\superterminal-header-redraw")) { try { [IO.File]::Delete("$env:TEMP\superterminal-header-redraw") } catch {}; $W = 0 }
+    if ([IO.File]::Exists("$env:TEMP\superterminal-header-redraw")) { try { [IO.File]::Delete("$env:TEMP\superterminal-header-redraw") } catch {}; $W = 0; $FfLines = $null }   # (o setup tambem: widgets mudaram a altura)
     if ([Console]::WindowWidth -ne $W -or [Console]::WindowHeight -ne $H) {
         if ($W) { Start-Sleep -Milliseconds 150 }   # (espera que o tamanho estabilize)
         $W = [Console]::WindowWidth; $H = [Console]::WindowHeight
         HLog "redesenho ${W}x$H"
+        if (Get-Command Update-Widgets -ErrorAction Ignore) { Update-Widgets }
         ff -Bar; [Console]::Write("$e[?25l")
         HLog "desenhado, cursor na linha $([Console]::CursorTop)"
         # altura pelo conteudo (o fastfetch tem $FfLines linhas, a coluna dos comandos $CheatRows): com o painel mais
@@ -36,7 +37,7 @@ while ($true) {
     }
     elseif ($tick.ElapsedMilliseconds -ge 2000 -and -not (Test-Path "$env:TEMP\superterminal-header-static")) {   # (ffw desliga)
         # ao vivo: o fastfetch volta a correr e escreve por cima (sem limpar -> nao pisca); ESC[K apaga restos
-        Update-TsCache 5
+        Update-TsCache 5; if (Get-Command Update-Widgets -ErrorAction Ignore) { Update-Widgets }
         $enc = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); Push-Location $HOME
         try { $ffo = @(fastfetch --pipe false 2>$null) } finally { Pop-Location; [Console]::OutputEncoding = $enc }
         [Console]::Write("$e[?2026h$e[H" + (($ffo | ForEach-Object { "$_$e[K" }) -join "`n")); Show-Cheats; [Console]::Write("$e[?2026l")

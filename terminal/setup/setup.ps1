@@ -808,7 +808,80 @@ function Edit-Keys {
     }
 }
 
-# ---------- 8. sudo ----------
+# ---------- 8. widgets do cabecalho ----------
+# widgets.json = o que esta ligado + as definicoes; o perfil (Update-Widgets) atualiza-os e o fastfetch mostra-os
+$WidgetsFile = "$StCfg\widgets.json"
+$WidgetList = @(
+    @('weather', 'Weather', 'wttr.in: your city (or empty: guessed from your connection)'),
+    @('calendar', 'Next calendar event', 'from your calendar''s private iCal link (Google: Settings > your calendar > "Secret address in iCal format")'),
+    @('music', 'Now playing', 'Spotify or mpv (yt / st)'),
+    @('backup', 'Backup status', 'how long ago the newest file in your backup folder changed'))
+function Get-Widgets { $w = if (Test-Path $WidgetsFile) { try { Get-Content $WidgetsFile -Raw | ConvertFrom-Json -AsHashtable } catch {} }; if (-not $w) { $w = @{} }; if (-not $w.enabled) { $w.enabled = @() }; $w }
+function Set-FfWidgets([string[]]$on) {
+    # secao "today" no fim do config do fastfetch, entre // widgets> e // <widgets (o resto do ficheiro fica como esta)
+    $f = "$Cfg\fastfetch\config.jsonc"; if (-not (Test-Path $f)) { return }
+    $s = [regex]::Replace((Get-Content $f -Raw), '(?s),?\s*// widgets>.*?// <widgets', '')
+    if ($on) {
+        $keys = @{ weather = 'weather'; calendar = 'next'; music = 'playing'; backup = 'backup' }
+        $mods = foreach ($n in $WidgetList | ForEach-Object { $_[0] } | Where-Object { $_ -in $on }) {
+            "        { `"type`": `"command`", `"key`": `"  $($keys[$n])`", `"shell`": `"cmd.exe`", `"param`": `"/c`", `"text`": `"type %LOCALAPPDATA%\\pwsh-init-cache\\w-$n.txt 2>nul`" }"
+        }
+        $block = ",`n        // widgets> (setup > Header widgets)`n        `"break`",`n        { `"type`": `"custom`", `"format`": `"\u001b[1;35m  today   \u001b[0;90m──────────────────────────────`" },`n" + ($mods -join ",`n") + "`n        // <widgets"
+        $i = $s.LastIndexOf(']'); $s = $s.Substring(0, $i).TrimEnd() + $block + "`n    " + $s.Substring($i)
+    }
+    Set-Content $f $s -NoNewline -Encoding utf8
+    Set-Content "$env:TEMP\superterminal-header-redraw" '1'   # (o cabecalho redesenha com a altura nova)
+}
+function Edit-Widgets {
+    $sel = 0; $msg = $null
+    while ($true) {
+        $w = Get-Widgets
+        $o = "$e[2J$e[H`n  $e[1;${Accent}m$([char]0xf009)  $e[1;97mHeader widgets$e[0m`n`n  $e[90mPick what the header shows under ""today"".$e[0m`n`n"
+        for ($i = 0; $i -lt $WidgetList.Count; $i++) {
+            $x = $WidgetList[$i]; $on = $w.enabled -contains $x[0]
+            $box = if ($on) { "$e[32m$([char]0xf14a)" } else { "$e[90m$([char]0xf0c8)" }
+            $extra = switch ($x[0]) { 'weather' { if ($w.city) { $w.city } else { 'auto' } } 'calendar' { if ($w.ics) { 'link set' } else { '' } } 'backup' { "$($w.backup)" } default { '' } }
+            $line = "{0,-22}" -f $x[1]
+            if ($i -eq $sel) { $o += "  $e[${Accent}m$([char]0x258C)$e[0m $box $e[48;2;$($StTheme.sel);1;97m $line $e[0m  $e[37m$extra$e[0m`n  $e[${Accent}m$([char]0x258C)$e[0m      $e[90m$($x[2])$e[0m`n" }
+            else { $o += "   $box $e[37m $line $e[0m  $e[90m$extra$e[0m`n" }
+        }
+        if ($msg) { $o += "`n  $msg$e[0m`n" }
+        $o += "`n  $(Chips @(@('↑↓', 'choose'), @('space', 'on / off'), @('s', 'settings'), @('esc', 'back')))"
+        [Console]::Write($o); $msg = $null
+        $k = [Console]::ReadKey($true); $x = $WidgetList[$sel]
+        switch ($k.Key) {
+            'UpArrow' { $sel = ($sel - 1 + $WidgetList.Count) % $WidgetList.Count; continue }
+            'DownArrow' { $sel = ($sel + 1) % $WidgetList.Count; continue }
+            'Escape' { return }
+        }
+        $ask = { param($n)
+            [Console]::Write("$e[2J$e[H`n"); [Console]::Write("$e[?25h")
+            try {
+                switch ($n) {
+                    'weather' { $c = Ask 'City (empty = guess from your connection)'; if ($null -ne $c) { $w.city = $c.Trim() } }
+                    'calendar' { $c = Ask-Secret 'Paste the iCal link (it stays only on this PC)'; if ($c) { if ($c.Trim() -match '^(https?|webcal)://') { $w.ics = $c.Trim() -replace '^webcal://', 'https://' } else { $script:wmsg = "$e[33mthat is not a link" } } }
+                    'backup' { Add-Type -AssemblyName System.Windows.Forms; $d = [System.Windows.Forms.FolderBrowserDialog]@{ Description = 'Your backup folder' }; if ($d.ShowDialog() -eq 'OK') { $w.backup = $d.SelectedPath } }
+                }
+            } finally { [Console]::Write("$e[?25l") }
+        }
+        $script:wmsg = $null
+        if ($k.KeyChar -eq ' ' -or $k.Key -eq 'Enter') {
+            if ($w.enabled -contains $x[0]) { $w.enabled = @($w.enabled | Where-Object { $_ -ne $x[0] }) }
+            else {
+                if (($x[0] -eq 'calendar' -and -not $w.ics) -or ($x[0] -eq 'backup' -and -not $w.backup)) { & $ask $x[0] }
+                if (($x[0] -eq 'calendar' -and -not $w.ics) -or ($x[0] -eq 'backup' -and -not $w.backup)) { $msg = if ($script:wmsg) { $script:wmsg } else { "$e[33mneeds a setting first" }; continue }
+                $w.enabled = @($w.enabled) + $x[0]
+            }
+        } elseif ($k.KeyChar -eq 's' -and $x[0] -ne 'music') { & $ask $x[0]; if ($script:wmsg) { $msg = $script:wmsg } }
+        else { continue }
+        $w | ConvertTo-Json | Set-Content $WidgetsFile -Encoding utf8
+        Remove-Item "$env:LOCALAPPDATA\pwsh-init-cache\w-$($x[0]).txt" -ErrorAction Ignore   # (atualiza ja)
+        Set-FfWidgets $w.enabled
+        if (-not $msg) { $msg = "$e[32m$([char]0xf00c)  saved: the header updates in a few seconds" }
+    }
+}
+
+# ---------- 9. sudo ----------
 function Get-SudoMode { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo' -ErrorAction Ignore).Enabled }
 $SudoPage = if ([Environment]::OSVersion.Version.Build -ge 22000) {
     @{ icon = [char]0xf132; title = 'sudo'
@@ -846,6 +919,8 @@ $Steps = [ordered]@{
         check = { $l = Get-Logo; if ($l.lines.Count) { @{ ok = $true; text = "$($l.lines.Count) lines · $($l.colors -join ' / ')" } } else { @{ ok = $false; text = 'no logo' } } } }
     wsl = @{ icon = [char]0xe712; name = 'WSL (Linux)'; run = { Show-Guide $WslPage }
         check = { $d = Get-Distro; if (-not $d) { @{ ok = $false; text = 'not installed (optional)' } } elseif ("$(Invoke-Wsl 'grep -q kvn.zshrc ~/.zshrc && echo y')".Trim() -eq 'y') { @{ ok = $true; text = $d } } else { @{ ok = $false; text = "$d · not linked yet" } } } }
+    widgets = @{ icon = [char]0xf009; name = 'Header widgets'; run = { Edit-Widgets }
+        check = { $on = @((Get-Widgets).enabled); @{ ok = $true; text = $(if ($on) { $on -join ', ' } else { 'none (optional)' }) } } }
     keys = @{ icon = [char]0xf11c; name = 'Shortcuts'; run = { Edit-Keys }
         check = { $n = (Get-Keys).Count; @{ ok = $true; text = $(if ($n) { "$n changed" } else { 'defaults' }) } } }
     sudo = @{ icon = [char]0xf132; name = 'sudo'; run = { Show-Guide $SudoPage }
