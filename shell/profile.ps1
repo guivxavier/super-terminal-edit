@@ -296,7 +296,7 @@ if (-not [Console]::IsOutputRedirected) {
                 $W = [Console]::WindowWidth; $H = [Console]::WindowHeight
                 $x0 = 3                                                    # coluna da moldura esquerda
                 $nameW = [Math]::Min(60, ($rowsData | ForEach-Object { $_.nm.Length } | Measure-Object -Maximum).Maximum)
-                $host1 = $env:COMPUTERNAME.ToLower(); $pc = $PcIcon[(Get-PcName)]
+                $host1 = $env:COMPUTERNAME.ToLower(); $pc = Get-PcIcon (Get-PcName)
                 $cnt = if ($nLocal -eq $items.Count) { "$($items.Count) folder$(if ($items.Count -ne 1) { 's' })" } else { "$nLocal here $dot $($items.Count - $nLocal) frequent" }
                 $bw = [Math]::Min($W - 4, [Math]::Max([Math]::Max(58, $nameW + 26), $host1.Length + $dir.Length + $cnt.Length + 18))   # largura da caixa toda (cresce com o caminho)
                 $x1 = $x0 + $bw - 1                                       # coluna da moldura direita
@@ -866,6 +866,9 @@ function ssh {
 function Get-DownloadsDir { (New-Object -ComObject Shell.Application).Namespace('shell:Downloads').Self.Path }
 function ConvertTo-ScpPath([string]$p) { $p.Trim().Trim('"').Replace('\', '/') }   # (o scp do Windows usa SFTP: sem aspas, / em vez de \)
 $PcIcon = @{ desktop = [char]0xf108; laptop = [char]0xf109 }
+# nome e icone de um PC para os titulos (ls, rls, get / send); sem ele no pcs.json (PC novo, ainda sem setup) = o deste
+function Get-PcLabel([string]$pc) { if ($pc -and $SshHosts[$pc]) { "$($SshHosts[$pc])".ToLower() } else { $env:COMPUTERNAME.ToLower() } }
+function Get-PcIcon([string]$pc) { if ($pc -and $PcIcon[$pc]) { $PcIcon[$pc] } elseif ($pc -match 'lap|book|note') { [char]0xf109 } else { [char]0xf108 } }
 function Get-FileIcon([string]$name, [bool]$dir) {
     if ($dir) { return "`e[34m$([char]0xf07b)" }
     switch -Regex ([IO.Path]::GetExtension($name).ToLower()) {
@@ -904,7 +907,7 @@ function Get-RemoteInfo([string]$pc, [string]$path) {
 function Show-XferHead($from, $to, [string]$what, [bool]$dir, $info) {
     $n = if ($dir -or $info.count -gt 1) { "$($info.count) files  `e[90m$([char]0x00B7)`e[0m  " } else { '' }
     Write-Host ''
-    Write-Host "  `e[90m$($PcIcon[$from])  $($SshHosts[$from].ToLower())`e[0m  `e[90m$([char]0x2192)`e[0m  `e[1;97m$($PcIcon[$to])  $($SshHosts[$to].ToLower())`e[0m"
+    Write-Host "  `e[90m$(Get-PcIcon $from)  $(Get-PcLabel $from)`e[0m  `e[90m$([char]0x2192)`e[0m  `e[1;97m$(Get-PcIcon $to)  $(Get-PcLabel $to)`e[0m"
     Write-Host "  $(Get-FileIcon $what $dir)`e[0m  `e[97m$what`e[0m   `e[90m$n$(Format-Size $info.size)`e[0m"
 }
 function Invoke-Xfer([string[]]$scpArgs, [double]$total, [scriptblock]$measure, [int]$everyMs = 250) {
@@ -999,7 +1002,7 @@ function Show-Listing([string]$pc, [string]$full, $rows) {
     $cw = try { [Console]::WindowWidth } catch { if ($env:COLUMNS) { [int]$env:COLUMNS } else { 120 } }   # (vindo do WSL nao ha consola: o zsh passa COLUMNS)
     $nw = [Math]::Max(20, [Math]::Min(56, $cw - 40))
     Write-Host ''
-    Write-Host "  `e[1;97m$($PcIcon[$pc])  $($SshHosts[$pc].ToLower())`e[0m  `e[37m$full`e[0m   `e[90m$($rows.Count) items$(if ($tot) { "  $([char]0x00B7)  $(Format-Size $tot)" })`e[0m"
+    Write-Host "  `e[1;97m$(Get-PcIcon $pc)  $(Get-PcLabel $pc)`e[0m  `e[37m$full`e[0m   `e[90m$($rows.Count) items$(if ($tot) { "  $([char]0x00B7)  $(Format-Size $tot)" })`e[0m"
     Write-Host "  `e[90m$([string][char]0x2500 * ($nw + 30))`e[0m"
     foreach ($x in $rows) {
         $nm = if ($x.name.Length -gt $nw) { $x.name.Substring(0, $nw - 1) + [char]0x2026 } else { $x.name }
