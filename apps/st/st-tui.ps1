@@ -299,10 +299,18 @@ function Switch-Fav($m) {
 }
 
 # ---------- fontes (catálogos do AIOMetadata) ----------
+# (cada pessoa configura o AIOMetadata à sua maneira: sem os catálogos "Latest" usa-se o trending / o 1.o com géneros)
+function Find-Cat([string]$t, [string]$kind) {
+    $c = @($Aio.manifest.catalogs | Where-Object { $_.type -eq $t -and -not @($_.extra | Where-Object { $_.name -eq 'search' -and $_.isRequired }) })
+    $g = { param($x) @($x | Where-Object { @(($_.extra | Where-Object name -eq 'genre').options).Count }) }
+    $pick = if ($kind -eq 'latest') { @($c | Where-Object id -like '*latest*') + @(& $g ($c | Where-Object id -like '*trending*')) + @(& $g $c) }
+    else { @($c | Where-Object id -like '*trending*') + @($c | Where-Object id -like '*popular*') + @($c | Where-Object id -like '*top*') + $c }
+    @($pick | Where-Object { $_ })[0].id
+}
 function Get-Genres([string]$type) {
     # géneros dos catálogos "recentes" (para 'todos': os dos dois tipos)
     $t = if ($type -eq 'all') { @('movie', 'series') } else { @($type) }
-    @($Aio.manifest.catalogs | Where-Object { $_.type -in $t -and $_.id -like 'tmdb.discover.*latest*' } | ForEach-Object { @(($_.extra | Where-Object name -eq 'genre').options) }) | Select-Object -Unique
+    @(foreach ($x in $t) { $id = Find-Cat $x 'latest'; @(($Aio.manifest.catalogs | Where-Object { $_.type -eq $x -and $_.id -eq $id } | Select-Object -First 1).extra | Where-Object name -eq 'genre').options }) | Select-Object -Unique
 }
 function Get-TypeGenre([string]$g, [string]$type) {
     # o mesmo género pode ter outro nome no outro tipo (Action / Action & Adventure, Science Fiction / Sci-Fi & Fantasy)
@@ -317,9 +325,10 @@ function Get-Sources($v) {
         if ($v.q) { @{ base = "$b/catalog/$t/search.$t"; extra = "search=$([uri]::EscapeDataString($v.q))"; paged = $false; skip = 0; done = $false }; continue }
         $g = if ($v.genre) { Get-TypeGenre $v.genre $t } else { '' }
         if ($v.genre -and -not $g) { continue }   # este tipo não tem o género
-        $latest = ($Aio.manifest.catalogs | Where-Object { $_.type -eq $t -and $_.id -like 'tmdb.discover.*latest*' } | Select-Object -First 1).id
+        $latest = Find-Cat $t 'latest'
+        if (-not $latest) { continue }   # (este tipo nao tem catalogos neste AIOMetadata)
         if (-not $g) {
-            $id = if ($v.order -eq 'recent') { $latest } else { 'tmdb.trending' }
+            $id = if ($v.order -eq 'recent') { $latest } else { Find-Cat $t 'trending' }
             @{ base = "$b/catalog/$t/$id"; extra = ''; paged = $true; skip = 0; done = $false }
         }
         elseif ($v.order -eq 'trending' -and ($gc = $Aio.manifest.catalogs | Where-Object { $_.type -eq $t -and $_.id -like 'tmdb.discover.*' -and $_.id -notlike '*latest*' -and $_.name -like "$g *" } | Select-Object -First 1)) {
@@ -1020,7 +1029,7 @@ try {
     }
     Wait-Spin { $Net.ContainsKey('addons') } 'connecting to your Stremio account'
     $Addons = @(if ($Net['addons'].ok) { $Net['addons'].r })
-    $Aio = $Addons | Where-Object { $_.manifest.name -eq 'AIOMetadata' } | Select-Object -First 1
+    $Aio = $Addons | Where-Object { $_.manifest.id -eq 'aio-metadata' -or $_.manifest.name -match 'AIO ?Metadata' } | Select-Object -First 1   # (o mesmo teste do setup)
     if (-not $Aio) {
         if ($Net['addons'].auth) { Remove-Item $AuthFile -ErrorAction SilentlyContinue }
         $m = if ($Net['addons'].auth) { 'your Stremio session expired — run st again to sign in' } elseif ($Net['addons'].ok) { 'the AIOMetadata addon is missing from the account (it provides catalogs and search)' } else { "could not read the account's addons ($($Net['addons'].err)); if the session expired, delete ~\.config\stremio-auth.txt" }

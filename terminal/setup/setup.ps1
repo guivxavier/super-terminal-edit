@@ -504,7 +504,7 @@ function Get-StremioState {
     if (Test-Path $StremioAuth) {
         try {
             $ad = @((Invoke-Stremio 'addonCollectionGet' @{ update = $true }).addons); $s.auth = $true
-            $s.aio = [bool]@($ad | Where-Object { $_.manifest.name -match 'AIO ?Metadata' })
+            $s.aio = [bool]@($ad | Where-Object { $_.manifest.id -eq 'aio-metadata' -or $_.manifest.name -match 'AIO ?Metadata' })
             $str = @($ad | Where-Object { (Get-Res $_) -contains 'stream' -and $_.transportUrl -notlike 'http://127.0.0.1*' })
             $s.rd = @($str | Where-Object { $_.manifest.name -match '\bRD\b|debrid' -or $_.transportUrl -match 'realdebrid' }).Count
             $s.direct = $str.Count - $s.rd
