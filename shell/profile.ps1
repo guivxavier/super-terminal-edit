@@ -815,6 +815,9 @@ elseif (-not [Console]::IsOutputRedirected -and -not $env:KVN_CMD) {
 # clear / cls / Ctrl+L limpam mas voltam a mostrar o fastfetch
 Remove-Item Alias:clear, Alias:cls -Force -ErrorAction SilentlyContinue
 function clear { ff }
+# reset como no Linux (o reset.exe do Windows e outra coisa: "reset session" do Ambiente de Trabalho Remoto): repoe o
+# terminal - cores, cursor, rato, ecra alternativo, regiao de scroll deixados por uma app que rebentou - e limpa
+function reset { [Console]::Write("$([char]27)c$([char]27)[?1049l$([char]27)[?1000l$([char]27)[?1003l$([char]27)[?1006l$([char]27)[r$([char]27)[0m$([char]27)[?25h"); ff }
 # ao sair de uma sessao SSH interativa (ssh <host>), limpa logo o ecra
 # ---- ssh desktop / ssh laptop: abre o pwsh do outro PC ('pwsh -NoLogo': sem o banner), com avisos claros ----
 # (mesmo PC, sessao que ja vem de la, nome que nao resolve, desligado, sshd parado, chave recusada)

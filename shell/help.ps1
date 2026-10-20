@@ -82,7 +82,7 @@ $KvnHelp = @(
         kb = @(@('up / down  1-6', 'choose a step'), @('enter', 'set it up (or again)'), @('q  esc', 'done'))
         notes = @('opens by itself the first time the terminal starts', 'stremio: sign in, AIOMetadata, and streams with or without Real-Debrid', 'logo: block letters from text, or draw / paste your own in the editor') }
     @{ g = 'shell'; c = 'ff'; s = 'clear the shell / redraw the header'; ins = 'ff'
-        use = @(@('ff', 'clear the shell (clear and ctrl+l do the same)'), @('ffw', 'header live (every 2 s) on / off'))
+        use = @(@('ff', 'clear the shell (clear and ctrl+l do the same)'), @('reset', 'like on Linux: fixes a terminal left broken by an app (colours, cursor, mouse) and clears'), @('ffw', 'header live (every 2 s) on / off'))
         notes = @('the header lives in the top pane and redraws itself (live is the default)') }
     @{ g = 'shell'; c = 'pin'; s = 'header pane on top, on / off'; ins = 'pin'
         use = @(@('pin', 'on / off (on by default in new tabs)'))
