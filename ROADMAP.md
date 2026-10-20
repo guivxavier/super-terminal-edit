@@ -26,12 +26,17 @@ Goal: a colleague runs one command on a clean Windows and gets the same terminal
   - [x] Stremio for `st`: choose with / without Real-Debrid first, then account, Real-Debrid, Stremio Account Bootstrapper (preset standard / http-only), AIOMetadata, each checked on the account;
   - [x] header logo: drawing editor (mouse paints / erases, block letters from text, palettes); the header's columns move right for a wider logo;
   - [x] sudo (Windows 11 setting, inline / gsudo on Windows 10);
-  - [ ] WSL (optional).
-- [ ] **Draw your own ASCII art** (Kev's request): an editor in the terminal to draw the header logo (grid with mouse/keys, colours from the theme, preview in the header), saved to the per-person config. Also importing an image (chafa) or text (figlet-style).
-- [ ] **Change keybinds** (Kev's request): a screen listing every shortcut (WezTerm, PSReadLine, yt/st/micro/hx), to change one by pressing the new key, with conflict detection. Saved to the per-person config and applied to WezTerm (Lua reads the file) and to the profile.
+  - [x] WSL (optional): install WSL + Ubuntu, create the Linux user, then zsh + tools and guarded lines in `.bashrc` / `.zshrc` (outside SuperTerminal WSL stays as it was).
+- [x] **Draw your own ASCII art** (Kev's request): an editor in the terminal to draw the header logo (grid with mouse/keys, colours from the theme, preview in the header), saved to the per-person config. Also importing an image (chafa) or text (figlet-style).
+- [x] **Change keybinds** (Kev's request): `setup keys` lists the terminal's shortcuts; a new one is set by pressing it (WezTerm lets go of every key while the editor waits), conflicts are refused; saved to `~\.config\superterminal\keys.json`, read by `wezterm.lua`. Still to do: PSReadLine and yt/st keys.
 
-## UI pass (Kev's request)
-- [ ] **yt, st, view and the terminal itself**: one visual language (spacing, cards, status bars, skeletons, icons, One Dark colours), the same keys in all of them, the help on `?` in the same format, and loading and error states.
+## Extras (Kev's request)
+- [x] **Command palette** (Ctrl+P): commands, apps, recent folders (zoxide), PCs and setup steps in WezTerm's fuzzy selector; enter runs it in the shell. Inside micro / hx / lazygit Ctrl+P stays theirs.
+- [x] **Themes**: `theme` (One Dark, Catppuccin Mocha, Tokyo Night) writes `~\.config\superterminal\theme.json`; WezTerm, header, fzf, bat, micro, helix, yt, st, setup and F1 follow it.
+- [x] **System monitor**: `monitor` shows CPU, GPU, RAM, temperature and the top processes of this PC and every named PC (over ssh), side by side.
+- [x] **Header widgets**: `setup widgets` turns on weather, next calendar event (iCal link, simple events only), now playing (Spotify / mpv) and backup status, in a "today" section of the header.
+
+## UI pass (Kev's request)- [ ] **yt, st, view and the terminal itself**: one visual language (spacing, cards, status bars, skeletons, icons, One Dark colours), the same keys in all of them, the help on `?` in the same format, and loading and error states.
 - [ ] Rename `kvn-*` (files, env vars like `KVN_CMD`) to `st-*`/`SUPERTERMINAL_*`. (Careful: `st` is already the Stremio command.)
 
 ## Phase 2: clean up what works badly
