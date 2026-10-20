@@ -7,13 +7,14 @@
 param([string]$Step)
 
 $e = [char]27
+. "$HOME\.config\st-theme.ps1"   # cores do tema ($StTheme)
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $Cfg = "$HOME\.config"; $Pwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
 $StCfg = "$Cfg\superterminal"; New-Item -ItemType Directory $StCfg -Force | Out-Null
 $StremioApi = 'https://api.strem.io/api'; $StremioAuth = "$Cfg\stremio-auth.txt"
 $FfConfig = "$Cfg\fastfetch\config.jsonc"
-$Accent = '38;2;97;175;239'
-$Chip = "$e[48;2;62;68;81;97m"
+$Accent = "38;2;$($StTheme.blue)"
+$Chip = "$e[48;2;$($StTheme.sel);97m"
 
 # ---------- ecra ----------
 function Clear-Screen { [Console]::Write("$e[2J$e[3J$e[H") }
@@ -642,10 +643,10 @@ function Edit-Logo {
         $o += "$e[$($top - 1);$($left - 1)H$e[90m$([char]0x256D)" + ([string][char]0x2500 * $CW) + "$([char]0x256E)"
         for ($r = 0; $r -lt $CH; $r++) {
             $col = $AnsiOf[$pal[(Get-RowColor ($r - $f) $n) - 1]]
-            $o += "$e[$($top + $r);$($left - 1)H$e[90m$([char]0x2502)$e[48;2;33;37;43m"
+            $o += "$e[$($top + $r);$($left - 1)H$e[90m$([char]0x2502)$e[48;2;$($StTheme.dark)m"
             for ($c = 0; $c -lt $CW; $c++) {
                 $cc = $cv[$r][$c]
-                if ($r -eq $cy -and $c -ge $cx -and $c -lt $cx + $brush) { $o += "$e[48;2;97;175;239;30m$cc$e[0;48;2;33;37;43m" }
+                if ($r -eq $cy -and $c -ge $cx -and $c -lt $cx + $brush) { $o += "$e[48;2;$($StTheme.blue);30m$cc$e[0;48;2;$($StTheme.dark)m" }
                 elseif ($cc -eq ' ') { $o += "$e[38;2;55;60;70m$(if ($c % 2 -eq 0 -and $r % 2 -eq 0) { [char]0x00B7 } else { ' ' })" }
                 else { $o += "$e[${col}m$cc" }
             }
@@ -777,7 +778,7 @@ function Edit-Keys {
         for ($i = 0; $i -lt $KeyActs.Count; $i++) {
             $a = $KeyActs[$i]; $v = if ($cur[$a[0]]) { $cur[$a[0]] } else { $a[2] }; $chg = [bool]$cur[$a[0]]
             $line = "{0,-28}" -f $a[1]; $kv = "$(Show-Key $v)$(if ($chg) { "   $e[90m(was $(Show-Key $a[2]))" })"
-            if ($i -eq $sel) { $o += "  $e[${Accent}m$([char]0x258C)$e[48;2;62;68;81;1;97m $line $e[0m  $e[${Accent}m$kv$e[0m`n" } else { $o += "   $e[37m $line $e[0m  $e[$(if ($chg) { $Accent } else { '37' })m$kv$e[0m`n" }
+            if ($i -eq $sel) { $o += "  $e[${Accent}m$([char]0x258C)$e[48;2;$($StTheme.sel);1;97m $line $e[0m  $e[${Accent}m$kv$e[0m`n" } else { $o += "   $e[37m $line $e[0m  $e[$(if ($chg) { $Accent } else { '37' })m$kv$e[0m`n" }
         }
         if ($msg) { $o += "`n  $msg$e[0m`n" }
         $o += "`n  $(Chips @(@('↑↓', 'choose'), @('enter', 'change'), @('r', 'back to default'), @('esc', 'back')))"
@@ -862,7 +863,7 @@ function Show-Menu {
             $s = $Steps[$keys[$i]]; $r = $st[$keys[$i]]
             $mark = if ($r.ok) { "$e[32m$([char]0xf00c)" } else { "$e[33m$([char]0xf111)" }
             $line = "{0}  {1}  {2,-16}" -f ($i + 1), $s.icon, $s.name
-            if ($i -eq $sel) { [Console]::Write("  $e[${Accent}m$([char]0x258C)$e[48;2;62;68;81;1;97m $line $e[0m  $mark  $e[0;37m$($r.text)$e[0m`n") }
+            if ($i -eq $sel) { [Console]::Write("  $e[${Accent}m$([char]0x258C)$e[48;2;$($StTheme.sel);1;97m $line $e[0m  $mark  $e[0;37m$($r.text)$e[0m`n") }
             else { [Console]::Write("   $e[37m $line $e[0m  $mark  $e[90m$($r.text)$e[0m`n") }
         }
         [Console]::Write("`n  $(Chips @(@('↑↓', 'choose'), @('enter', 'set up'), @('q', 'done')))")

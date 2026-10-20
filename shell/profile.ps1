@@ -31,9 +31,18 @@ $PcsFile = "$HOME\.config\superterminal\pcs.json"
 $Pcs = @(if (Test-Path $PcsFile) { try { Get-Content $PcsFile -Raw | ConvertFrom-Json } catch {} })
 $NetHostNames = @{}; foreach ($pc in $Pcs) { if ($pc.ip) { $NetHostNames[$pc.ip] = $pc.host } }
 $PwshExe = 'C:\Program Files\PowerShell\7\pwsh.exe'   # (pwsh 7 MSI nos dois PCs; usado para lancar processos escondidos)
-# tema One Dark em todo o lado (o mesmo do Windows Terminal): fzf (Ctrl+R, F1, k, fetch, app...) e bat (cat, view, fetch)
-$env:FZF_DEFAULT_OPTS = '--color=fg:#abb2bf,bg:-1,hl:#61afef,fg+:#ffffff,bg+:#3e4451,hl+:#61afef,info:#98c379,prompt:#56b6c2,pointer:#e06c75,marker:#e5c07b,spinner:#c678dd,header:#5c6370,border:#4b5263,gutter:-1,query:#abb2bf'
-$env:BAT_THEME = 'OneHalfDark'
+# tema (comando theme): ~\.config\superterminal\theme.json = a paleta escolhida; o WezTerm, yt, st, setup e F1 leem-na.
+# Aqui: fzf (Ctrl+R, F1, k, fetch, app...) e bat (cat, view, fetch). Sem ficheiro: One Dark
+$ThemeFile = "$HOME\.config\superterminal\theme.json"
+function Set-ThemeEnv($t) {
+    $env:FZF_DEFAULT_OPTS = "--color=fg:$($t.fg),bg:-1,hl:$($t.blue),fg+:$($t.white),bg+:$($t.sel),hl+:$($t.blue),info:$($t.green),prompt:$($t.cyan),pointer:$($t.red),marker:$($t.yellow),spinner:$($t.magenta),header:$($t.comment),border:$($t.line),gutter:-1,query:$($t.fg)"
+    $env:BAT_THEME = $t.bat
+}
+$Theme = if (Test-Path $ThemeFile) { try { Get-Content $ThemeFile -Raw | ConvertFrom-Json } catch {} }
+if ($Theme) { Set-ThemeEnv $Theme } else {
+    $env:FZF_DEFAULT_OPTS = '--color=fg:#abb2bf,bg:-1,hl:#61afef,fg+:#ffffff,bg+:#3e4451,hl+:#61afef,info:#98c379,prompt:#56b6c2,pointer:#e06c75,marker:#e5c07b,spinner:#c678dd,header:#5c6370,border:#4b5263,gutter:-1,query:#abb2bf'
+    $env:BAT_THEME = 'OneHalfDark'
+}
 # editor: micro (teclas normais: Ctrl+S guarda, Ctrl+W sai); o git e o lazygit tambem o usam. nano -> micro
 $env:EDITOR = $env:VISUAL = 'micro'; $env:MICRO_TRUECOLOR = '1'
 function nano { micro @args }
@@ -821,7 +830,68 @@ Remove-Item Alias:clear, Alias:cls -Force -ErrorAction SilentlyContinue
 function clear { ff }
 # reset como no Linux (o reset.exe do Windows e outra coisa: "reset session" do Ambiente de Trabalho Remoto): repoe o
 # terminal - cores, cursor, rato, ecra alternativo, regiao de scroll deixados por uma app que rebentou - e limpa
-function reset { [Console]::Write("$([char]27)c$([char]27)[?1049l$([char]27)[?1000l$([char]27)[?1003l$([char]27)[?1006l$([char]27)[r$([char]27)[0m$([char]27)[?25h"); ff }
+# ---- theme: muda as cores de tudo de uma vez (WezTerm, cabecalho, fzf, bat, micro, helix, yt, st, setup) ----
+#   theme            -> escolher (com pre-visualizacao)      theme <nome>  -> aplicar
+$Themes = [ordered]@{
+    'one-dark'    = @{ title = 'One Dark'; bg = '#282C34'; dark = '#21252B'; surf = '#2C313A'; surf2 = '#343A45'; sel = '#3E4451'; line = '#4B5263'; comment = '#5C6370'; fg = '#ABB2BF'; white = '#FFFFFF'
+        red = '#E06C75'; green = '#98C379'; yellow = '#E5C07B'; blue = '#61AFEF'; magenta = '#C678DD'; cyan = '#56B6C2'; cursor = '#528BFF'; bat = 'OneHalfDark'; micro = 'one-dark'; helix = 'onedark' }
+    'catppuccin'  = @{ title = 'Catppuccin Mocha'; bg = '#1E1E2E'; dark = '#181825'; surf = '#28283A'; surf2 = '#313244'; sel = '#45475A'; line = '#585B70'; comment = '#6C7086'; fg = '#CDD6F4'; white = '#FFFFFF'
+        red = '#F38BA8'; green = '#A6E3A1'; yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#CBA6F7'; cyan = '#94E2D5'; cursor = '#F5E0DC'; bat = 'Catppuccin Mocha'; micro = 'st-theme'; helix = 'catppuccin_mocha' }
+    'tokyo-night' = @{ title = 'Tokyo Night'; bg = '#1A1B26'; dark = '#16161E'; surf = '#1F2335'; surf2 = '#292E42'; sel = '#33467C'; line = '#414868'; comment = '#565F89'; fg = '#C0CAF5'; white = '#FFFFFF'
+        red = '#F7768E'; green = '#9ECE6A'; yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'; cyan = '#7DCFFF'; cursor = '#C0CAF5'; bat = 'ansi'; micro = 'st-theme'; helix = 'tokyonight' }
+}
+function theme([string]$Name) {
+    if (-not $Name) {
+        $cur = if ($Theme) { $Theme.name } else { 'one-dark' }
+        $rows = foreach ($k in $Themes.Keys) { $t = $Themes[$k]; $sw = ($t.bg, $t.sel, $t.red, $t.green, $t.yellow, $t.blue, $t.magenta, $t.cyan, $t.fg | ForEach-Object { $c = [Convert]::FromHexString($_.Substring(1)); "$([char]27)[48;2;$($c[0]);$($c[1]);$($c[2])m   " }) -join ''; "$k`t$sw$([char]27)[0m  $($t.title)$(if ($k -eq $cur) { '  (now)' })" }
+        $Name = ($rows | fzf --ansi --delimiter "`t" --with-nth 2 --height 8 --reverse --no-info --prompt 'theme > ') -split "`t" | Select-Object -First 1
+        if (-not $Name) { return }
+    }
+    $t = $Themes[$Name]; if (-not $t) { Write-Host "no theme '$Name' (themes: $($Themes.Keys -join ', '))" -ForegroundColor Red; return }
+    $o = [ordered]@{ name = $Name }; foreach ($k in $t.Keys) { $o[$k] = $t[$k] }
+    # micro: o One Dark e dele; os outros: um esquema gerado com a paleta
+    if ($t.micro -eq 'st-theme') {
+        New-Item -ItemType Directory "$HOME\.config\micro\colorschemes" -Force | Out-Null
+        @"
+color-link default "$($t.fg),$($t.bg)"
+color-link comment "$($t.comment)"
+color-link identifier "$($t.blue)"
+color-link constant "$($t.yellow)"
+color-link constant.string "$($t.green)"
+color-link constant.number "$($t.yellow)"
+color-link statement "$($t.magenta)"
+color-link symbol "$($t.cyan)"
+color-link preproc "$($t.magenta)"
+color-link type "$($t.yellow)"
+color-link special "$($t.cyan)"
+color-link underlined "$($t.blue)"
+color-link error "bold $($t.red)"
+color-link todo "bold $($t.yellow)"
+color-link selection "$($t.white),$($t.sel)"
+color-link statusline "$($t.fg),$($t.surf2)"
+color-link tabbar "$($t.fg),$($t.surf2)"
+color-link indent-char "$($t.line)"
+color-link line-number "$($t.line),$($t.bg)"
+color-link current-line-number "$($t.fg),$($t.bg)"
+color-link cursor-line "$($t.surf)"
+color-link color-column "$($t.surf)"
+color-link gutter-error "$($t.red)"
+color-link gutter-warning "$($t.yellow)"
+color-link diff-added "$($t.green)"
+color-link diff-modified "$($t.yellow)"
+color-link diff-deleted "$($t.red)"
+color-link scrollbar "$($t.line)"
+"@ | Set-Content "$HOME\.config\micro\colorschemes\st-theme.micro" -Encoding utf8
+    }
+    $mf = "$HOME\.config\micro\settings.json"; if (Test-Path $mf) { (Get-Content $mf -Raw) -replace '"colorscheme": *"[^"]*"', "`"colorscheme`": `"$($t.micro)`"" | Set-Content $mf -NoNewline -Encoding utf8 }
+    $hf = "$HOME\.config\helix\config.toml"; if (Test-Path $hf) { (Get-Content $hf -Raw) -replace '(?m)^theme *= *"[^"]*"', "theme = `"$($t.helix)`"" | Set-Content $hf -NoNewline -Encoding utf8 }
+    # por ultimo o theme.json: o WezTerm ve-o e recarrega as cores (yt / st / setup leem-no quando abrem)
+    $o | ConvertTo-Json | Set-Content $ThemeFile -Encoding utf8
+    $global:Theme = [pscustomobject]$o; Set-ThemeEnv $global:Theme
+    Write-Host "  $([char]0xf00c) $($t.title)" -ForegroundColor Green
+}
+Register-ArgumentCompleter -CommandName theme -ParameterName Name -ScriptBlock { param($c, $p, $w) $Themes.Keys | Where-Object { $_ -like "$w*" } }
+function reset {[Console]::Write("$([char]27)c$([char]27)[?1049l$([char]27)[?1000l$([char]27)[?1003l$([char]27)[?1006l$([char]27)[r$([char]27)[0m$([char]27)[?25h"); ff }
 # ao sair de uma sessao SSH interativa (ssh <host>), limpa logo o ecra
 # ---- ssh desktop / ssh laptop: abre o pwsh do outro PC ('pwsh -NoLogo': sem o banner), com avisos claros ----
 # (mesmo PC, sessao que ja vem de la, nome que nao resolve, desligado, sshd parado, chave recusada)

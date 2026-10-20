@@ -13,18 +13,30 @@ local AGENT = wezterm.home_dir .. '\\.local\\superterminal\\agent.exe'   -- Ctrl
 local SESSION = wezterm.home_dir .. '\\.local\\superterminal\\session.json'
 
 -- ---- aspeto: o mesmo do Windows Terminal (One Dark, Caskaydia Mono) ----
+-- (o comando theme escreve ~\.config\superterminal\theme.json com a paleta; muda-o e o WezTerm recarrega sozinho)
+local THEME_FILE = wezterm.home_dir .. '\\.config\\superterminal\\theme.json'
+wezterm.add_to_config_reload_watch_list(THEME_FILE)
+local T = { bg = '#282C34', dark = '#21252B', surf = '#2C313A', sel = '#3E4451', line = '#4B5263', comment = '#5C6370', fg = '#ABB2BF', white = '#FFFFFF',
+  red = '#E06C75', green = '#98C379', yellow = '#E5C07B', blue = '#61AFEF', magenta = '#C678DD', cyan = '#56B6C2', cursor = '#528BFF' }
+do
+  local f = io.open(THEME_FILE, 'r')
+  if f then
+    local ok, t = pcall(wezterm.json_parse, f:read('*a')); f:close()
+    if ok and type(t) == 'table' then for k, v in pairs(t) do T[k] = v end end
+  end
+end
 config.colors = {
-  foreground = '#ABB2BF', background = '#282C34', cursor_bg = '#528BFF', cursor_border = '#528BFF',
-  selection_bg = '#3E4451', selection_fg = 'none', split = '#3E4451',
-  ansi = { '#282C34', '#E06C75', '#98C379', '#E5C07B', '#61AFEF', '#C678DD', '#56B6C2', '#ABB2BF' },
-  brights = { '#5C6370', '#E06C75', '#98C379', '#E5C07B', '#61AFEF', '#C678DD', '#56B6C2', '#FFFFFF' },
+  foreground = T.fg, background = T.bg, cursor_bg = T.cursor, cursor_border = T.cursor,
+  selection_bg = T.sel, selection_fg = 'none', split = T.sel,
+  ansi = { T.bg, T.red, T.green, T.yellow, T.blue, T.magenta, T.cyan, T.fg },
+  brights = { T.comment, T.red, T.green, T.yellow, T.blue, T.magenta, T.cyan, T.white },
   tab_bar = {
-    background = '#282C34',   -- (a mesma cor da janela: a barra fica discreta)
-    active_tab = { bg_color = '#3E4451', fg_color = '#ABB2BF' },
-    inactive_tab = { bg_color = '#282C34', fg_color = '#5C6370' },
-    inactive_tab_hover = { bg_color = '#2C313A', fg_color = '#ABB2BF' },
-    new_tab = { bg_color = '#21252B', fg_color = '#5C6370' },
-    new_tab_hover = { bg_color = '#2C313A', fg_color = '#ABB2BF' },
+    background = T.bg,   -- (a mesma cor da janela: a barra fica discreta)
+    active_tab = { bg_color = T.sel, fg_color = T.fg },
+    inactive_tab = { bg_color = T.bg, fg_color = T.comment },
+    inactive_tab_hover = { bg_color = T.surf, fg_color = T.fg },
+    new_tab = { bg_color = T.dark, fg_color = T.comment },
+    new_tab_hover = { bg_color = T.surf, fg_color = T.fg },
   },
 }
 -- fonte escolhida no setup (~\.config\superterminal\font.txt, uma linha com a familia); sem ela, a CaskaydiaMono.
@@ -197,8 +209,8 @@ end)
 -- a cada 250 ms: o cabecalho nunca fica com o foco; separador so com o cabecalho -> fecha-o
 -- barra de baixo: as teclas principais a direita, a cinzento (como a barra de estado de um editor)
 local function key_hint(k, t)
-  return { { Background = { Color = '#3E4451' } }, { Foreground = { Color = '#ABB2BF' } }, { Text = ' ' .. k .. ' ' },
-           { Background = { Color = '#282C34' } }, { Foreground = { Color = '#5C6370' } }, { Text = ' ' .. t .. '   ' } }
+  return { { Background = { Color = T.sel } }, { Foreground = { Color = T.fg } }, { Text = ' ' .. k .. ' ' },
+           { Background = { Color = T.bg } }, { Foreground = { Color = T.comment } }, { Text = ' ' .. t .. '   ' } }
 end
 local KEYS_HINT = {}
 for _, kt in ipairs { { '^T', 'tab' }, { '^D', 'split' }, { '^R', 'history' }, { 'F1', 'help' } } do

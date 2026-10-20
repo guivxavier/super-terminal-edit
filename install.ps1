@@ -148,7 +148,7 @@ Step 'Config files'
 $ProfilePath = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell\Microsoft.PowerShell_profile.ps1'
 $Map = @(
     @('shell\profile.ps1', $ProfilePath),
-    @('shell\help.ps1', "$Cfg\kvn-help.ps1"),
+    @('shell\help.ps1', "$Cfg\kvn-help.ps1"), @('shell\theme.ps1', "$Cfg\st-theme.ps1"),
     @('apps\yt\yt-tui.ps1', "$Cfg\yt-tui.ps1"), @('apps\yt\yt-search.ps1', "$Cfg\yt-search.ps1"), @('apps\yt\yt-prefetch.ps1', "$Cfg\yt-prefetch.ps1"),
     @('apps\st\st-tui.ps1', "$Cfg\st-tui.ps1"), @('apps\view\view.ps1', "$Cfg\view.ps1"),
     @('config\fastfetch\config.jsonc', "$Cfg\fastfetch\config.jsonc"), @('config\fastfetch\config-hw.jsonc', "$Cfg\fastfetch\config-hw.jsonc"), @('config\fastfetch\config-live.jsonc', "$Cfg\fastfetch\config-live.jsonc"),

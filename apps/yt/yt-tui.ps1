@@ -6,6 +6,7 @@
 param([Parameter(ValueFromRemainingArguments = $true)] [string[]]$Rest)
 
 $e = [char]27
+. "$HOME\.config\st-theme.ps1"   # cores do tema ($StTheme)
 # ecra de arranque, logo a abrir (o resto demora ~1 s: DLL, lista, primeira grelha): logotipo e cartoes-esqueleto no
 # sitio da grelha, como o YouTube faz enquanto carrega
 & {
@@ -13,7 +14,7 @@ $e = [char]27
     if ($W -ge 70 -and $H -ge 22) {
         $cols = [Math]::Max(1, [Math]::Min(6, [Math]::Floor(($W - 6 + 3) / 43))); $cw = [Math]::Floor(($W - 6 - ($cols - 1) * 3) / $cols)
         $th = [Math]::Max(4, [int]($cw * 9 / 16 * 0.4)); $left = [Math]::Max(3, [Math]::Floor(($W - ($cols * ($cw + 3) - 3)) / 2) + 1)
-        $sk = "$e[48;2;44;49;58m"; $bar = "$e[48;2;52;58;68m"
+        $sk = "$e[48;2;$($StTheme.surf)m"; $bar = "$e[48;2;$($StTheme.surf2)m"
         $o += "$e[2;${left}H$e[1;31m$([char]0xf16a) $e[1;97mYouTube$e[0m"
         for ($r = 0; $r -lt 2 -and 7 + ($r + 1) * ($th + 6) -le $H; $r++) {
             for ($c = 0; $c -lt $cols; $c++) {
@@ -449,7 +450,7 @@ function Wait-Busy([scriptblock]$done, [string]$msg, [int]$maxMs = 600000, [swit
     $frames = [char[]]'⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'; $i = 0; $sw = [Diagnostics.Stopwatch]::StartNew()
     $W = [Console]::WindowWidth; $r = if ($Row) { $Row } else { [Math]::Floor([Console]::WindowHeight / 2) }
     $bw = [Math]::Max(28, $msg.Length + $hint.Length + 10); $c = [Math]::Max(1, [Math]::Floor(($W - $bw) / 2) + 1)
-    $bg = "$e[48;2;44;49;58m"; $tw = $bw - 4
+    $bg = "$e[48;2;$($StTheme.surf)m"; $tw = $bw - 4
     while (-not (& $done) -and $sw.ElapsedMilliseconds -lt $maxMs) {
         if ($Cancelable -and [Console]::KeyAvailable) {
             $k = Read-Key
@@ -459,7 +460,7 @@ function Wait-Busy([scriptblock]$done, [string]$msg, [int]$maxMs = 600000, [swit
         # linha 1: spinner + texto (+ "esc cancels" a direita); linha 2: trilho cinzento com um segmento vermelho a ir e vir
         $sp = $frames[$i % $frames.Count]; $pad = $bw - 6 - $msg.Length - $hint.Length
         $seg = 8; $pos = [int](($tw - $seg) * (1 - [Math]::Cos($i * 0.12)) / 2); $i++
-        $bar = "$e[38;2;62;68;81m" + ([string][char]0x2501 * $pos) + "$e[38;2;255;0;0m" + ([string][char]0x2501 * $seg) + "$e[38;2;62;68;81m" + ([string][char]0x2501 * ($tw - $pos - $seg))
+        $bar = "$e[38;2;$($StTheme.sel)m" + ([string][char]0x2501 * $pos) + "$e[38;2;255;0;0m" + ([string][char]0x2501 * $seg) + "$e[38;2;$($StTheme.sel)m" + ([string][char]0x2501 * ($tw - $pos - $seg))
         [Console]::Write("$e[?2026h$e[$($r - 1);${c}H$bg" + (' ' * $bw) + "$e[$r;${c}H$bg  $e[1;31m$sp  $e[0;97m$bg$msg" + (' ' * [Math]::Max(1, $pad)) + "$e[90m$hint  " +
             "$e[$($r + 1);${c}H$bg  $bar$bg  $e[$($r + 2);${c}H$bg" + (' ' * $bw) + "$e[0m$e[?2026l")
         Start-Sleep -Milliseconds 40
@@ -636,7 +637,7 @@ function Draw-Header($L, [string]$q, [bool]$focus) {
         "$e[2;$($L.W - $L.left - 11)H$acct$e[0m")
 }
 function Chips($items, [string]$active) {
-    ($items | ForEach-Object { if ($_.m -eq $active) { "$e[48;2;171;178;191;30m $($_.n) $e[0m  " } else { "$e[48;2;62;68;81;37m $($_.n) $e[0m  " } }) -join ''
+    ($items | ForEach-Object { if ($_.m -eq $active) { "$e[48;2;$($StTheme.fg);30m $($_.n) $e[0m  " } else { "$e[48;2;$($StTheme.sel);37m $($_.n) $e[0m  " } }) -join ''
 }
 function Get-Count($s) {
     # "video selecionado / total" (+ = ainda ha mais para carregar); com largura fixa para nao deixar restos ao encolher
@@ -649,7 +650,7 @@ function Draw-Count($s, $L) {
 }
 function Draw-Tabs($s, $L, [string]$pageInfo) {
     $out = "$e[5;1H$e[2K$e[5;$($L.left)H" + (Chips $Tabs $s.mode)
-    if ($s.mode -eq 'search') { $out += "$e[90m$([char]0x203A)  $e[48;2;171;178;191;30m $($s.label) $e[0m" }
+    if ($s.mode -eq 'search') { $out += "$e[90m$([char]0x203A)  $e[48;2;$($StTheme.fg);30m $($s.label) $e[0m" }
     if ($pageInfo) { $out += "$e[5;$($L.W - $L.left - $pageInfo.Length + 1)H$e[90m$pageInfo$e[0m" }
     [Console]::Write($out)
 }
@@ -716,7 +717,7 @@ function Draw-Page($s) {
     Draw-Header $L $s.q $false
     if ($s.mode -eq 'channel') { Draw-Channel $s $L $pi } else { Draw-Tabs $s $L $pi }
     $sb = [Text.StringBuilder]::new()
-    $ph = "$e[48;2;44;49;58m" + (' ' * $L.TW) + "$e[0m"
+    $ph = "$e[48;2;$($StTheme.surf)m" + (' ' * $L.TW) + "$e[0m"
     for ($i = 0; $i -lt $pageIds.Count; $i++) {
         $p = Get-TilePos $i $L
         if (Test-Six $pageIds[$i] $L) { [void]$sb.Append("$e[$($p.r);$($p.c)H").Append((Get-Sixel $pageIds[$i] $L)) }
@@ -743,7 +744,7 @@ function Scroll-Grid($s, $L, [int]$dir) {
     $o = "$e[?2026h$e[$top;${bot}r$e[$top;1H" + $(if ($dir -gt 0) { "$e[$($h)S" } else { "$e[$($h)T" }) + "$e[r"
     $row = if ($dir -gt 0) { $L.rows - 1 } else { 0 }
     $script:Pending = [Collections.Generic.List[object]]::new()
-    $ph = "$e[48;2;44;49;58m" + (' ' * $L.TW) + "$e[0m"
+    $ph = "$e[48;2;$($StTheme.surf)m" + (' ' * $L.TW) + "$e[0m"
     for ($c = 0; $c -lt $L.cols; $c++) {
         $slot = $row * $L.cols + $c; $i = $start + $slot; $p = Get-TilePos $slot $L
         if ($i -ge $s.vids.Count) { continue }
@@ -774,7 +775,7 @@ function Update-Pending {
     if ($o) { [Console]::Write($o) }
 }
 # tecla desenhada como "chip" (o mesmo estilo da caixa de comandos do terminal)
-function Key-Chip([string]$k) { "$e[48;2;62;68;81;97m $k $e[0m" }
+function Key-Chip([string]$k) { "$e[48;2;$($StTheme.sel);97m $k $e[0m" }
 # rodape: os atalhos principais, sempre visiveis
 function New-Key($ch, $key, [switch]$Shift) { [ConsoleKeyInfo]::new([char]$ch, [ConsoleKey]$key, [bool]$Shift, $false, $false) }
 # rodape (tecla, texto, tecla equivalente para o clique)
@@ -848,7 +849,7 @@ function Show-Help($L) {
     }
     $lines.RemoveAt($lines.Count - 1)
     $hgt = $lines.Count + 4; $top = [Math]::Max(2, [Math]::Floor(($L.H - $hgt) / 2)); $lc = [Math]::Floor(($L.W - $w) / 2)
-    $bg = "$e[48;2;33;37;43m"; $bd = "$e[38;2;92;99;112m"; $h = [string][char]0x2500
+    $bg = "$e[48;2;$($StTheme.dark)m"; $bd = "$e[38;2;$($StTheme.comment)m"; $h = [string][char]0x2500
     $out = "$e[$top;${lc}H$bg$bd$([char]0x256D)$h $e[1;97mshortcuts $bd" + ($h * ($w - 14)) + "$([char]0x256E)$e[0m"
     $r = $top + 1
     $blank = "$bg$bd$([char]0x2502)$e[0m$bg" + (' ' * ($w - 2)) + "$bd$([char]0x2502)$e[0m"
@@ -902,7 +903,7 @@ function Read-Search($L, [string]$q, [scriptblock]$Under) {
                 # (a parte ja escrita a normal, o resto a negrito: como o YouTube)
                 $txt = Fit $m ($L.bw - 8)
                 $hl = if ($buf -and $txt.StartsWith($buf, [StringComparison]::OrdinalIgnoreCase)) { $txt.Substring(0, $buf.Length) + "$e[1m" + $txt.Substring($buf.Length) } else { $txt }
-                $rowBg = if ($i -eq $sel) { "$e[48;2;62;68;81m" } else { $bg }
+                $rowBg = if ($i -eq $sel) { "$e[48;2;$($StTheme.sel)m" } else { $bg }
                 $o += "$e[$($r + $i);$($L.bc)H$sd$rowBg$e[90m $ic  $e[22;97m$hl$e[22m$rowBg" + (' ' * [Math]::Max(0, $L.bw - 6 - $txt.Length)) + "$e[0m$sd$e[0m"
             } else { $o += "$e[$($r + $i);$($L.bc)H$bg" + (' ' * $L.bw) + "$e[0m" }
         }
@@ -1202,7 +1203,7 @@ function Show-Watch($s) {
 
         $sb = [Text.StringBuilder]::new(); [void]$sb.Append("$e[2J")
         # enquanto abre: painel escuro liso no lugar do video (a thumbnail nao aparece; o indicador vai ao centro)
-        $panelBg = "$e[48;2;33;37;43m"
+        $panelBg = "$e[48;2;$($StTheme.dark)m"
         for ($q = 0; $q -lt $vh; $q++) { [void]$sb.Append("$e[$($vr + $q);${lm}H$panelBg" + (' ' * $vw) + "$e[0m") }
         # escreve uma linha centrada no painel (por posicao: o texto nunca desalinha)
         $center = { param($row, $text, $len) "$e[$row;$($lm + [Math]::Max(0, [Math]::Floor(($vw - $len) / 2)))H$panelBg$text$e[0m" }
@@ -1212,7 +1213,7 @@ function Show-Watch($s) {
         $meta = @($(if ($v.v -and $v.v -ne 'NA') { "$(Format-Num $v.v) views" }), (Format-Ago $v.ts), $(if ($v.dur -and $v.dur -notin 'NA', 'live') { $v.dur })) | Where-Object { $_ }
         [void]$sb.Append("$e[$($r);${lm}H$e[31m$([char]0xf16a)  $e[1;37m$($v.ch)$e[0;90m" + $(if ($meta) { "   $([char]0x00B7)   " + ($meta -join "   $([char]0x00B7)   ") }) + "$e[0m")
         $infoRow = $r; $descRow = $r + 2
-        if ($env:WEZTERM_PANE) { Set-Hints $WatchHints } else { [void]$sb.Append("$e[$H;${lm}H$e[48;2;62;68;81;97m ? $e[0;90m shortcuts$e[0m") }
+        if ($env:WEZTERM_PANE) { Set-Hints $WatchHints } else { [void]$sb.Append("$e[$H;${lm}H$e[48;2;$($StTheme.sel);97m ? $e[0;90m shortcuts$e[0m") }
         [Console]::Write($sb.ToString())
         $drawHead = { }   # (sem titulo "up next": a lista comeca alinhada com o topo do video, como no YouTube)
         $drawNext = {
@@ -1223,7 +1224,7 @@ function Show-Watch($s) {
                     # ainda a carregar: cartoes-esqueleto (bloco da thumbnail + barras), senao vazio
                     for ($q = 0; $q -lt $nh; $q++) {
                         $o += "$e[$($rr + $q);${rc}H" + $(if ($relBusy -and -not $next.Count) {
-                                "$e[48;2;44;49;58m" + (' ' * $nw) + "$e[0m  " + $(switch ($q) { 0 { "$e[48;2;62;68;81m" + (' ' * [Math]::Min(28, $tw2)) + "$e[0m" } 1 { "$e[48;2;62;68;81m" + (' ' * [Math]::Min(18, $tw2)) + "$e[0m" } 2 { "$e[48;2;44;49;58m" + (' ' * [Math]::Min(12, $tw2)) + "$e[0m" } default { '' } }) + (' ' * [Math]::Max(0, $rw - $nw - 32))
+                                "$e[48;2;$($StTheme.surf)m" + (' ' * $nw) + "$e[0m  " + $(switch ($q) { 0 { "$e[48;2;$($StTheme.sel)m" + (' ' * [Math]::Min(28, $tw2)) + "$e[0m" } 1 { "$e[48;2;$($StTheme.sel)m" + (' ' * [Math]::Min(18, $tw2)) + "$e[0m" } 2 { "$e[48;2;$($StTheme.surf)m" + (' ' * [Math]::Min(12, $tw2)) + "$e[0m" } default { '' } }) + (' ' * [Math]::Max(0, $rw - $nw - 32))
                             } else { ' ' * $rw })
                     }
                     continue
@@ -1232,7 +1233,7 @@ function Show-Watch($s) {
                 # titulo em 2 linhas, canal, visualizacoes · data; o selecionado com a barra vermelha por baixo do titulo
                 $x = $next[$j]; $sel = $j -eq $ns
                 $img = if (Test-Path "$Dir\$($x.id)-hq.jpg") { "$Dir\$($x.id)-hq.jpg" } else { "$Dir\$($x.id).jpg" }
-                $o += if (Test-Path $img) { "$e[$rr;${rc}H" + (Get-Img $img $nw $nh -Stretch) } else { (0..($nh - 1) | ForEach-Object { "$e[$($rr + $_);${rc}H$e[48;2;44;49;58m" + (' ' * $nw) + "$e[0m" }) -join '' }
+                $o += if (Test-Path $img) { "$e[$rr;${rc}H" + (Get-Img $img $nw $nh -Stretch) } else { (0..($nh - 1) | ForEach-Object { "$e[$($rr + $_);${rc}H$e[48;2;$($StTheme.surf)m" + (' ' * $nw) + "$e[0m" }) -join '' }
                 if ($x.dur) { $d = " $($x.dur) "; $o += "$e[$($rr + $nh - 1);$($rc + $nw - $d.Length)H$(if ($x.dur -eq 'live') { "$e[48;2;204;0;0;1;97m" } else { "$e[48;2;15;15;15;1;97m" })$d$e[0m" }
                 $t2 = @(Wrap-Lines $x.t $tw2 2)
                 $o += "$e[$rr;${tx}H$e[$(if ($sel) { '1;97' } else { '1;37' })m$(Fit $t2[0] $tw2)" + "$e[$($rr + 1);${tx}H$(Fit $(if ($t2.Count -gt 1) { $t2[1] } else { '' }) $tw2)"
@@ -1257,7 +1258,7 @@ function Show-Watch($s) {
                 $txt = @(Wrap-Lines $cm.text ($lw - 2) $room)
                 $likes = Format-Num $cm.like_count
                 $ago = Format-Ago $cm.timestamp
-                $name = if ($cm.author_is_uploader) { "$e[48;2;62;68;81;1;97m $($cm.author) $e[0m" } else { "$e[1;97m$($cm.author)$e[0m" }
+                $name = if ($cm.author_is_uploader) { "$e[48;2;$($StTheme.sel);1;97m $($cm.author) $e[0m" } else { "$e[1;97m$($cm.author)$e[0m" }
                 $o += "$e[$rr;${lm}H$(if ($cm.is_pinned) { "$e[90m$([char]0xf08d) pinned  " })$name$e[0;90m  $ago$e[0m"; $rr++
                 foreach ($l in $txt) { $o += "$e[$rr;${lm}H$e[37m$l$e[0m"; $rr++ }
                 if ($likes -and $rr -lt $H - 2) { $o += "$e[$rr;${lm}H$e[90m$([char]0xf164)  $likes$e[0m"; $rr++ }
@@ -1293,7 +1294,7 @@ function Show-Watch($s) {
                 $o = "$e[$infoRow;${lm}H" + (' ' * $lw) + "$e[$infoRow;${lm}H$e[31m$([char]0xf16a)  $e[1;37m$($v.ch)$e[0;90m" + $(if ($subs) { "   $([char]0x00B7)   $subs subscribers" })
                 $meta = @($(if ($likes) { "$([char]0x2665) $likes" }), $(if ($views) { "$views views" }), (Format-Ago $info.timestamp)) | Where-Object { $_ }
                 $ms = ($meta | ForEach-Object { " $_ " }) -join "  "   # chips
-                $o += "$e[$infoRow;$($lm + $lw - $ms.Length)H" + (($meta | ForEach-Object { "$e[48;2;62;68;81;97m $_ $e[0m" }) -join "  ")
+                $o += "$e[$infoRow;$($lm + $lw - $ms.Length)H" + (($meta | ForEach-Object { "$e[48;2;$($StTheme.sel);97m $_ $e[0m" }) -join "  ")
                 # descrição: mantém os parágrafos, até 4 linhas, links a azul, dentro de um cartão
                 $d = [Collections.Generic.List[string]]::new()
                 # (encolhe para deixar sempre ~8 linhas aos comentarios: num ecra mais baixo nao sobrava nenhuma)
@@ -1301,7 +1302,7 @@ function Show-Watch($s) {
                 foreach ($par in ("$($info.description)" -split "`n")) { if ($par.Trim()) { foreach ($l in @(Wrap-Lines $par ($lw - 4) $dMax)) { $d.Add($l) } }; if ($d.Count -ge $dMax) { break } }
                 $rr = $descRow
                 if ($d.Count) {
-                    foreach ($l in @('') + @($d | Select-Object -First $dMax) + @('')) { $o += "$e[$rr;${lm}H$e[48;2;44;49;58;37m  " + ($l.PadRight($lw - 4) -replace '(https?://\S+)', "$e[34m`$1$e[37m") + "  $e[0m"; $rr++ }
+                    foreach ($l in @('') + @($d | Select-Object -First $dMax) + @('')) { $o += "$e[$rr;${lm}H$e[48;2;$($StTheme.surf);37m  " + ($l.PadRight($lw - 4) -replace '(https?://\S+)', "$e[34m`$1$e[37m") + "  $e[0m"; $rr++ }
                 }
                 $comRow = $rr + 1
                 $o += "$e[$comRow;${lm}H$e[1;97mComments$e[0;90m  $(@($info.comments | Where-Object { $_ }).Count)"; $comRow += 2
@@ -1335,7 +1336,7 @@ function Show-Watch($s) {
                     # painel de carregamento: icone do YouTube, "loading video" com spinner, barra que corre e o tempo
                     $c = $vr + [Math]::Floor($vh / 2); $bwid = [Math]::Min(36, $vw - 8)
                     $pos = $spin % ($bwid + 6) - 6   # segmento de 6 que entra pela esquerda e sai pela direita
-                    $bar = -join (0..($bwid - 1) | ForEach-Object { if ($_ -ge $pos -and $_ -lt $pos + 6) { "$e[38;2;224;108;117m$([char]0x2501)" } else { "$e[38;2;75;82;99m$([char]0x2501)" } })
+                    $bar = -join (0..($bwid - 1) | ForEach-Object { if ($_ -ge $pos -and $_ -lt $pos + 6) { "$e[38;2;$($StTheme.red)m$([char]0x2501)" } else { "$e[38;2;$($StTheme.line)m$([char]0x2501)" } })
                     $secs = '{0:0.0} s' -f $loadSw.Elapsed.TotalSeconds
                     $o = "$e[$($c + 2);${lm}H$panelBg" + (' ' * $vw)   # (o tempo muda de largura)
                     $o += & $center ($c - 3) "$e[31m$([char]0xf16a)" 1
@@ -1351,7 +1352,7 @@ function Show-Watch($s) {
             if ($playing -and -not $ended -and $mp.HasExited) { $ended = $true; $autoplay = [bool]$next.Count; $endSw = [Diagnostics.Stopwatch]::StartNew(); $endN = 0 }
             if ($ended) {
                 if ($autoplay -and $next.Count -and $endSw.Elapsed.TotalSeconds -ge 10) { $v = $next[$ns]; break }
-                $chips = { param($list) ($list | ForEach-Object { "$e[48;2;62;68;81;97m $($_[0]) $panelBg$e[0;90m$panelBg $($_[1])" }) -join "$panelBg     " }
+                $chips = { param($list) ($list | ForEach-Object { "$e[48;2;$($StTheme.sel);97m $($_[0]) $panelBg$e[0;90m$panelBg $($_[1])" }) -join "$panelBg     " }
                 $chipLen = { param($list) ($list | ForEach-Object { $_[0].Length + $_[1].Length + 3 } | Measure-Object -Sum).Sum + 5 * ($list.Count - 1) }
                 if ($next.Count -and $endN++ % 3 -eq 0) {
                     # como o cartao de autoplay do YouTube: miniatura do seguinte, titulo, canal, views / ha quanto tempo,
@@ -1367,7 +1368,7 @@ function Show-Watch($s) {
                         $o += "$e[$cy;${cx}H$panelBg$e[0;90mUp next$e[0m"
                         $jp = "$Dir\$($nx.id).jpg"; if (-not [IO.File]::Exists($jp)) { $jp = "$Dir\$($nx.id)-hq.jpg" }
                         $img = if ([IO.File]::Exists($jp)) { Get-Img $jp $tw $th -Stretch } else { $null }
-                        if ($img) { $o += "$e[$($cy + 2);${cx}H$img" } else { for ($q = 0; $q -lt $th; $q++) { $o += "$e[$($cy + 2 + $q);${cx}H$e[48;2;44;49;58m" + (' ' * $tw) + "$e[0m" } }
+                        if ($img) { $o += "$e[$($cy + 2);${cx}H$img" } else { for ($q = 0; $q -lt $th; $q++) { $o += "$e[$($cy + 2 + $q);${cx}H$e[48;2;$($StTheme.surf)m" + (' ' * $tw) + "$e[0m" } }
                         if ($nx.dur -and $nx.dur -notin 'NA', 'live') { $o += "$e[$($cy + 1 + $th);$($cx + $tw - $nx.dur.Length - 2)H$e[48;2;20;20;20;97m $($nx.dur) $e[0m" }
                         $r = $cy + 2
                         foreach ($l in @(Wrap-Lines $nx.t $iw 2)) { $o += "$e[$r;$($cx + $tx)H$panelBg$e[1;97m$l$e[0m"; $r++ }
@@ -1383,7 +1384,7 @@ function Show-Watch($s) {
                     $o = ''
                     if ($autoplay) {
                         $left = [Math]::Max(0, 10 - $endSw.Elapsed.TotalSeconds); $fill = [int]($cw * $left / 10)
-                        $o += "$e[$($cy + $th + 3);${cx}H$panelBg$e[38;2;224;108;117m" + ([string][char]0x2501 * $fill) + "$e[38;2;75;82;99m" + ([string][char]0x2501 * ($cw - $fill))
+                        $o += "$e[$($cy + $th + 3);${cx}H$panelBg$e[38;2;$($StTheme.red)m" + ([string][char]0x2501 * $fill) + "$e[38;2;$($StTheme.line)m" + ([string][char]0x2501 * ($cw - $fill))
                         $pl = "playing in $([Math]::Ceiling($left)) s"; $o += "$e[$cy;$($cx + $cw - $pl.Length)H$panelBg$e[0;37m$pl"
                     } else { $o += "$e[$($cy + $th + 3);${cx}H$panelBg" + (' ' * $cw) + "$e[$cy;$($cx + $cw - 16)H$panelBg" + (' ' * 16) }
                     [Console]::Write($o + "$e[0m")

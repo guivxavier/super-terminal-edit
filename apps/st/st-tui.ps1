@@ -1,4 +1,4 @@
-﻿# st-tui: Stremio no terminal — grelha de posters (sixel via chafa) com filtros (tipo, género, ordem), pesquisa,
+# st-tui: Stremio no terminal — grelha de posters (sixel via chafa) com filtros (tipo, género, ordem), pesquisa,
 # favoritos (locais), página do título com episódios,
 # streams de todos os addons instalados na conta Stremio (Torrentio, Comet, MediaFusion...) e reprodução no mpv.
 #   st            -> explorar (filmes em alta)      st <pesquisa> -> pesquisa      ? -> atalhos
@@ -6,6 +6,7 @@
 param([Parameter(ValueFromRemainingArguments = $true)] [string[]]$Rest)
 
 $e = [char]27
+. "$HOME\.config\st-theme.ps1"   # cores do tema ($StTheme)
 [Console]::OutputEncoding = [Text.Encoding]::UTF8   # (aberto sem o perfil, ex.: separador do pin ou do WSL, os icones e molduras viravam "?")
 $MpvDir = Split-Path (@((Get-Command mpv -ErrorAction SilentlyContinue).Source, 'C:\Program Files\MPV Player\mpv.exe', "$HOME\.local\mpv\mpv.exe") | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1)
 $MpvWin = Join-Path $MpvDir 'mpv.exe'
@@ -88,7 +89,7 @@ function Invoke-Login {
     $err = ''
     while ($true) {
         [Console]::Write("$e[2J$e[3;4H$e[1;${Accent}m$([char]0xf26c)  $e[1;97msign in to Stremio$e[0m$e[5;4H$e[90mthe session is saved in ~\.config\stremio-auth.txt   $([char]0x00B7)   no account? stremio.com (free)$e[0m" +
-            "$e[12;4H$e[48;2;62;68;81;97m enter $e[0m $e[90mnext$e[0m   $e[48;2;62;68;81;97m esc $e[0m $e[90mleave st$e[0m" + $(if ($err) { "$e[10;4H$e[31m$err$e[0m" }))
+            "$e[12;4H$e[48;2;$($StTheme.sel);97m enter $e[0m $e[90mnext$e[0m   $e[48;2;$($StTheme.sel);97m esc $e[0m $e[90mleave st$e[0m" + $(if ($err) { "$e[10;4H$e[31m$err$e[0m" }))
         $mail = Read-Field 7 'email:'; if ($null -eq $mail) { return $false }
         if (-not $mail.Trim()) { continue }
         $plain = Read-Field 8 'password:' -Secret; if ($null -eq $plain) { return $false }
@@ -276,7 +277,7 @@ function Draw-Header($L, [string]$q, [bool]$focus) {
 }
 $Tabs = @(@{ m = 'explore'; n = 'explore' }, @{ m = 'favs'; n = 'favorites' })
 function Chips($items, [string]$active) {
-    ($items | ForEach-Object { if ($_.m -eq $active) { "$e[48;2;171;178;191;30m $($_.n) $e[0m  " } else { "$e[48;2;62;68;81;37m $($_.n) $e[0m  " } }) -join ''
+    ($items | ForEach-Object { if ($_.m -eq $active) { "$e[48;2;$($StTheme.fg);30m $($_.n) $e[0m  " } else { "$e[48;2;$($StTheme.sel);37m $($_.n) $e[0m  " } }) -join ''
 }
 $TypeNames = @{ movie = 'movies'; series = 'series'; all = 'all' }
 $OrderNames = @{ trending = 'trending'; recent = 'latest'; added = 'added'; name = 'name'; rating = 'rating' }
@@ -390,10 +391,10 @@ function Draw-TileText($m, [int]$slot, [bool]$sel) {
     "$e[$($p.y + $L.ph + 2);$($p.x)H$e[90m$(Fit $info ($L.pw - 2)) $heart$e[0m"
 }
 function Draw-Filters($v, $items) {
-    $chip = { param($k, $n, $val) "$e[90m$k $e[37m$n $e[48;2;62;68;81;97m $val $e[0m     " }
+    $chip = { param($k, $n, $val) "$e[90m$k $e[37m$n $e[48;2;$($StTheme.sel);97m $val $e[0m     " }
     $o = "$e[7;1H$e[2K$e[7;$($L.left)H" + (& $chip 't' 'type' $TypeNames[$v.type]) + (& $chip 'g' 'genre' $(if ($v.genre) { $v.genre } else { 'all' }))
     if (-not ($v.tab -eq 'explore' -and $v.q)) { $o += & $chip 'o' 'sort' $OrderNames[$v.order] }
-    if ($v.q) { $o += "$e[90msearch $e[48;2;171;178;191;30m $($v.q) $e[0;90m  esc clears$e[0m" }
+    if ($v.q) { $o += "$e[90msearch $e[48;2;$($StTheme.fg);30m $($v.q) $e[0;90m  esc clears$e[0m" }
     $pi = if ($items.Count) { "$($v.sel + 1) / $($items.Count)$(if ($v.tab -eq 'explore' -and -not $v.done) { '+' } else { ' ' })".PadLeft(11) } else { ' ' * 11 }
     $o + "$e[7;$($L.W - $L.left - $pi.Length + 1)H$e[90m$pi$e[0m"
 }
@@ -415,7 +416,7 @@ function Draw-Grid($v) {
         $six = Get-Six $m.id $L.pw $L.ph
         if ($six) { $o += "$e[$($p.y);$($p.x)H$six" }
         else {
-            for ($q = 0; $q -lt $L.ph; $q++) { $o += "$e[$($p.y + $q);$($p.x)H$e[48;2;44;49;58m" + (' ' * $L.pw) + "$e[0m" }
+            for ($q = 0; $q -lt $L.ph; $q++) { $o += "$e[$($p.y + $q);$($p.x)H$e[48;2;$($StTheme.surf)m" + (' ' * $L.pw) + "$e[0m" }
             $script:Pending.Add(@{ id = $m.id; y = $p.y; x = $p.x; m = $m })
         }
         $o += Draw-TileText $m $i ($start + $i -eq $v.sel)
@@ -447,7 +448,7 @@ function Select-Option([string]$title, $opts, [string]$cur) {
         $o = "$e[$y;${x}H$e[90m$([char]0x256D)$hl $e[1;97m$title $e[0;90m" + ($hl * ($bw - $title.Length - 5)) + [char]0x256E
         for ($k = 0; $k -lt $n; $k++) {
             $j = $off + $k; $t = Fit "$($opts[$j])" ($bw - 6)
-            $o += "$e[$($y + 1 + $k);${x}H$e[90m$([char]0x2502)$e[0m " + $(if ($j -eq $sel) { "$e[48;2;62;68;81;1;97m $t $e[0m" } else { "$e[37m $t $e[0m" }) + " $e[90m$([char]0x2502)"
+            $o += "$e[$($y + 1 + $k);${x}H$e[90m$([char]0x2502)$e[0m " + $(if ($j -eq $sel) { "$e[48;2;$($StTheme.sel);1;97m $t $e[0m" } else { "$e[37m $t $e[0m" }) + " $e[90m$([char]0x2502)"
         }
         $o += "$e[$($y + 1 + $n);${x}H$([char]0x2570)" + ($hl * ($bw - 2)) + "$([char]0x256F)$e[0m"
         [Console]::Write($o)
@@ -486,7 +487,7 @@ function Read-Search([string]$q) {
         for ($i = 0; $i -lt [Math]::Max($shown, $ms.Count + 1); $i++) { $o += "$e[$($r + $i);${bcx}H" + (' ' * $L0.bw) }
         for ($i = 0; $i -lt $ms.Count; $i++) {
             $line = " $([char]0xf017)  " + (Fit $ms[$i] ($L0.bw - 8))
-            $o += "$e[$r;${bcx}H" + $(if ($i -eq $sel) { "$e[48;2;62;68;81;97m$line $e[0m" } else { "$e[48;2;33;37;43;90m$line $e[0m" }); $r++
+            $o += "$e[$r;${bcx}H" + $(if ($i -eq $sel) { "$e[48;2;$($StTheme.sel);97m$line $e[0m" } else { "$e[48;2;$($StTheme.dark);90m$line $e[0m" }); $r++
         }
         $shown = $ms.Count + 1
         [Console]::Write($o)
@@ -589,12 +590,12 @@ function Show-Title($item) {
         elseif ($meta.poster) {
             # o poster não faz esperar: a página aparece já e ele entra quando estiver pronto
             Start-ImgJob @($meta) $pw2 $ph2
-            for ($q = 0; $q -lt $ph2; $q++) { $o += "$e[$(2 + $q);4H$e[48;2;44;49;58m" + (' ' * $pw2) + "$e[0m" }
+            for ($q = 0; $q -lt $ph2; $q++) { $o += "$e[$(2 + $q);4H$e[48;2;$($StTheme.surf)m" + (' ' * $pw2) + "$e[0m" }
             $castPend.Add(@{ id = $meta.id; y = 2; x = 4; w = $pw2; h = $ph2 })
         }
         # título + classificação etária (a de Portugal, se houver)
         $cert = if ($meta.app_extras.certifications.PT) { $meta.app_extras.certifications.PT } else { $meta.app_extras.certification }
-        $o += "$e[2;${x0}H$e[1;97m$($meta.name)$e[0m" + $(if ($cert) { "  $e[48;2;62;68;81;97m $cert $e[0m" })
+        $o += "$e[2;${x0}H$e[1;97m$($meta.name)$e[0m" + $(if ($cert) { "  $e[48;2;$($StTheme.sel);97m $cert $e[0m" })
         $info = @($meta.releaseInfo, $meta.runtime, $(if ($meta.imdbRating) { "$e[33m$([char]0xf005)$e[37m $($meta.imdbRating)$e[90m" }), (@($meta.genres) -join ' · ')) | Where-Object { $_ }
         $fav = if (Test-Fav $meta.id) { "     $e[31m$([char]0x2665) in favorites" } else { '' }
         $o += "$e[3;${x0}H$e[90m" + ($info -join "   ·   ") + $fav + "$e[0m"
@@ -611,7 +612,7 @@ function Show-Title($item) {
         if ($rows) { $r++; foreach ($x in $rows) { $o += "$e[$r;${x0}H$e[90m$($x[0].PadRight(12))$e[37m$(Fit $x[1] ($tw - 12))$e[0m"; $r++ } }
         $r++
         $trailer = @($meta.trailers | Where-Object ytId) | Select-Object -First 1
-        $keys = @($(if ($trailer) { "$e[48;2;62;68;81;97m  $([char]0xf16a)  trailer  $e[0;90m t$e[0m" }), $(if (Test-Fav $meta.id) { "$e[48;2;62;68;81;31m  $([char]0x2665)  favorite  $e[0;90m f$e[0m" } else { "$e[48;2;62;68;81;97m  $([char]0x2661)  favorite  $e[0;90m f$e[0m" })) | Where-Object { $_ }
+        $keys = @($(if ($trailer) { "$e[48;2;$($StTheme.sel);97m  $([char]0xf16a)  trailer  $e[0;90m t$e[0m" }), $(if (Test-Fav $meta.id) { "$e[48;2;$($StTheme.sel);31m  $([char]0x2665)  favorite  $e[0;90m f$e[0m" } else { "$e[48;2;$($StTheme.sel);97m  $([char]0x2661)  favorite  $e[0;90m f$e[0m" })) | Where-Object { $_ }
         $epList = @(); $epTop = 0
         if (-not $isSeries) {
             $p = $Prog.vids[$meta.id]
@@ -629,12 +630,12 @@ function Show-Title($item) {
                     $pp = $people[$j]; $cx = $x0 + $j * ($cw + 3)
                     $sx = Get-Six $pp.id $cw $ch
                     if ($sx) { $o += "$e[$r;${cx}H$sx" } else {
-                        for ($q = 0; $q -lt $ch; $q++) { $o += "$e[$($r + $q);${cx}H$e[48;2;44;49;58m" + (' ' * $cw) + "$e[0m" }
+                        for ($q = 0; $q -lt $ch; $q++) { $o += "$e[$($r + $q);${cx}H$e[48;2;$($StTheme.surf)m" + (' ' * $cw) + "$e[0m" }
                         if ($pp.poster) { $castPend.Add(@{ id = $pp.id; y = $r; x = $cx; w = $cw; h = $ch }) }
                         else {
                             # sem foto no catalogo: as iniciais ao centro (como os avatares do YouTube), em vez de uma caixa vazia
                             $ini = (@("$($pp.name)" -split '\s+' | Where-Object { $_ } | ForEach-Object { $_.Substring(0, 1).ToUpper() }) | Select-Object -First 2) -join ''
-                            $o += "$e[$($r + [Math]::Floor($ch / 2));$($cx + [Math]::Floor(($cw - $ini.Length) / 2))H$e[48;2;44;49;58;1;37m$ini$e[0m"
+                            $o += "$e[$($r + [Math]::Floor($ch / 2));$($cx + [Math]::Floor(($cw - $ini.Length) / 2))H$e[48;2;$($StTheme.surf);1;37m$ini$e[0m"
                         }
                     }
                     $o += "$e[$($r + $ch);${cx}H$e[37m$(Fit $pp.name $cw)$e[$($r + $ch + 1);${cx}H$e[90m$(Fit $pp.role $cw)$e[0m"
@@ -662,7 +663,7 @@ function Show-Title($item) {
                 $mark = if ($pg -ge 0.92) { "$e[31m$([char]0xf00c)" } elseif ($pg -gt 0) { "$e[33m$([char]0x25D0)" } else { ' ' }
                 $name = Fit "$($ep.episode)  $(if ($ep.name) { $ep.name } else { $ep.title })" ($tw - 16)
                 $line = " $mark $e[$(if ($sel) { '1;97' } elseif ($future) { '0;90' } else { '0;37' })m$name $e[90m$($date.PadLeft(10)) "
-                $s += "$e[$yy;${x0}H" + $(if ($sel) { "$e[48;2;62;68;81m$line$e[0m" } else { "$line$e[0m" })
+                $s += "$e[$yy;${x0}H" + $(if ($sel) { "$e[48;2;$($StTheme.sel)m$line$e[0m" } else { "$line$e[0m" })
             }
             [Console]::Write($s)
         }
@@ -793,7 +794,7 @@ function Show-Streams($meta, [string]$vid, [string]$label) {
             $x = $list[$j]; $isSel = $j -eq $sel
             $qc = switch ($x.ql) { '4K' { '48;2;198;120;221;30' } '1440p' { '48;2;152;94;172;97' } '1080p' { '48;2;97;175;239;38;2;40;44;52' } default { '48;2;62;68;81;37' } }
             $ca = if ($x.cached) { "$e[33m$([char]0xf0e7)" } else { "$e[90m$([char]0xf019)" }
-            $line = "$e[${qc}m $($x.ql.PadRight(5)) $e[0m$(if ($isSel) { "$e[48;2;62;68;81m" })  $ca  $e[$(if ($isSel) { '1;97' } else { '0;37' })m$(Fit $x.file $fw)  $e[90m$((Fit $x.tags 16))$e[36m$($x.sz.PadLeft(9))  $e[90m$(Fit $x.addon 14) $e[0m"
+            $line = "$e[${qc}m $($x.ql.PadRight(5)) $e[0m$(if ($isSel) { "$e[48;2;$($StTheme.sel)m" })  $ca  $e[$(if ($isSel) { '1;97' } else { '0;37' })m$(Fit $x.file $fw)  $e[90m$((Fit $x.tags 16))$e[36m$($x.sz.PadLeft(9))  $e[90m$(Fit $x.addon 14) $e[0m"
             $o += "$e[$yy;1H$e[2K$e[$yy;4H$line"
         }
         if (-not $list.Count -and -not $wait) { $o += "$e[6;4H$e[90mno streams found$(if ($filter) { ' with this filter' })$e[0m" }
@@ -922,7 +923,7 @@ function Start-Player($meta, [string]$vid, [string]$label, $st, $subs, [switch]$
     $o += "$e[$r;${tx}H$e[1;97m$(Fit $meta.name $tw)$e[0m"; $r++
     if ($label) { $o += "$e[$r;${tx}H$e[37m$(Fit $label $tw)$e[0m"; $r++ }
     $r++
-    if ($Trailer) { $o += "$e[$r;${tx}H$e[48;2;62;68;81;97m trailer $e[0m  $e[90m$(Fit $st.file ($tw - 12))$e[0m"; $r += 2 }
+    if ($Trailer) { $o += "$e[$r;${tx}H$e[48;2;$($StTheme.sel);97m trailer $e[0m  $e[90m$(Fit $st.file ($tw - 12))$e[0m"; $r += 2 }
     else {
         $qc = switch ($st.ql) { '4K' { '48;2;198;120;221;30' } '1440p' { '48;2;152;94;172;97' } '1080p' { '48;2;97;175;239;38;2;40;44;52' } default { '48;2;62;68;81;37' } }
         $o += "$e[$r;${tx}H$e[${qc}m $($st.ql) $e[0m  " + $(if ($st.cached) { "$e[33m$([char]0xf0e7) cached  " } else { "$e[90m$([char]0xf019) preparing on Real-Debrid  " }) + "$e[36m$($st.sz)$e[90m   $($st.addon)$e[0m"; $r++

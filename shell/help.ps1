@@ -1,6 +1,7 @@
 # Ajuda do terminal (F1): lista dos comandos por grupo no fzf, com a documentacao de cada um ao lado
 # (como usar, variantes, teclas, notas). Enter escreve o comando no prompt. Carregado so quando se carrega no F1.
 #   Cada entrada: g = grupo, c = comando, s = resumo, use = @(@('forma', 'o que faz'), ...), kb = teclas, notes, ins = texto a inserir
+. "$HOME\.config\st-theme.ps1"   # cores do tema ($StTheme)
 $KvnHelp = @(
     # ---- media ----
     @{ g = 'media'; c = 'yt'; s = 'YouTube in the terminal'; ins = 'yt '
@@ -84,6 +85,9 @@ $KvnHelp = @(
     @{ g = 'shell'; c = 'ff'; s = 'clear the shell / redraw the header'; ins = 'ff'
         use = @(@('ff', 'clear the shell (clear and ctrl+l do the same)'), @('reset', 'like on Linux: fixes a terminal left broken by an app (colours, cursor, mouse) and clears'), @('ffw', 'header live (every 2 s) on / off'))
         notes = @('the header lives in the top pane and redraws itself (live is the default)') }
+    @{ g = 'shell'; c = 'theme'; s = 'change the colours of everything at once'; ins = 'theme'
+        use = @(@('theme', 'pick one (with a preview of the colours)'), @('theme one-dark', 'One Dark (the default)'), @('theme catppuccin', 'Catppuccin Mocha'), @('theme tokyo-night', 'Tokyo Night'))
+        notes = @('terminal, header, fzf, bat, micro and helix change now; yt / st / setup on their next start') }
     @{ g = 'shell'; c = 'pin'; s = 'header pane on top, on / off'; ins = 'pin'
         use = @(@('pin', 'on / off (on by default in new tabs)'))
         notes = @('the top pane is view-only; pin stays on: ctrl+d splits the shell below, the header closes only when every shell below is closed', 'yt / st / lg / hx / micro / F1 take the whole window while open') }
@@ -133,7 +137,7 @@ function Show-KvnHelp {
     }
     $all = @($mine) + @($KvnHelp)
     # teclas como na barra de baixo do WezTerm: cada uma num "chip" ("ctrl+t", "1 2 3 4" -> um chip por tecla)
-    $chips = { param($k) ($k -split '  ' | Where-Object { $_ } | ForEach-Object { "$e[48;2;62;68;81;97m $_ $e[0m" }) -join ' ' }
+    $chips = { param($k) ($k -split '  ' | Where-Object { $_ } | ForEach-Object { "$e[48;2;$($StTheme.sel);97m $_ $e[0m" }) -join ' ' }
     $lines = foreach ($d in $all) {
         $id = $d.c; $col = $gc[$d.g]
         # pre-visualizacao: titulo grande com o icone do grupo, resumo, e as seccoes; os exemplos de uso num cartao
@@ -142,7 +146,7 @@ function Show-KvnHelp {
             $use = if ($d.use[0] -is [string]) { , $d.use } else { $d.use }   # (uma so linha: @(@(a, b)) desfaz-se em a, b)
             $w = [Math]::Min(28, (($use | ForEach-Object { "$(if ($_ -is [string]) { $_ } else { $_[0] })".Length }) | Measure-Object -Maximum).Maximum + 2)
             $o += '', " $e[1;${col}mUSAGE$e[0m"
-            $bg = "$e[48;2;33;37;43m"
+            $bg = "$e[48;2;$($StTheme.dark)m"
             $o += " $bg" + (' ' * 62) + "$e[0m"
             foreach ($u in $use) { if ($u -is [string]) { $u = $u, '' }; $o += " $bg  $e[36m$("$($u[0])".PadRight($w))$e[37m$("$($u[1])".PadRight([Math]::Max(0, 60 - $w)))$e[0m" }
             $o += " $bg" + (' ' * 62) + "$e[0m"
