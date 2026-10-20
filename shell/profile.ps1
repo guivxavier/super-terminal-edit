@@ -1262,6 +1262,13 @@ $DotGit = "$HOME\.dotfiles"; $SyncFlag = "$HOME\.config\sync-problem.txt"
 function dot { git -C $HOME --git-dir=$DotGit --work-tree=$HOME @args }   # (-C: os caminhos sao sempre relativos a home, seja qual for a pasta atual)
 $StRepo = "$HOME\.local\superterminal\repo"
 $StRepoUrl = 'https://github.com/kevgoncalves/SuperTerminal.git'   # ponytail: o repo do Kev; com a config por pessoa (fase 1) passa a vir de la
+# fetch do GitHub. A copia de um PC que so recebeu versoes por "super sync" nasceu de um git init, sem origin: junta-o
+function Invoke-StFetch {
+    git -C $StRepo remote get-url origin 2>&1 | Out-Null
+    if ($LASTEXITCODE) { git -C $StRepo remote add origin $StRepoUrl 2>&1 | Out-Null }
+    git -C $StRepo fetch -q origin 2>&1 | Out-Null
+    $LASTEXITCODE -eq 0
+}
 function Update-SuperTerminal {
     # -Incoming: a versao que outro PC acabou de mandar (em vez do GitHub). Devolve $true se este PC ficou na versao certa
     param([switch]$Quiet, [switch]$Incoming)
@@ -1279,8 +1286,7 @@ function Update-SuperTerminal {
     $before = "$(Get-StApplied)"
     $target = 'sync-incoming'
     if (-not $Incoming) {
-        git -C $StRepo fetch -q origin 2>&1 | Out-Null
-        if ($LASTEXITCODE) { & $say "  `e[90m$([char]0x25CB) no connection to GitHub: this PC stays on the version it has`e[0m"; return [bool]$before }
+        if (-not (Invoke-StFetch)) { & $say "  `e[90m$([char]0x25CB) no connection to GitHub: this PC stays on the version it has`e[0m"; return [bool]$before }
         $target = 'origin/main'
     }
     # (a copia e so do sync: fica igual a versao nova, sem merges)
@@ -1299,8 +1305,7 @@ function Get-StApplied { if (Test-Path "$StRepo\..\applied.txt") { "$(Get-Conten
 function Show-SyncStatus {
     # versao aplicada aqui (e nos outros PCs ligados) comparada com a mais recente do GitHub; nao muda nada
     if (-not (Test-Path "$StRepo\.git")) { Write-Host "  `e[33m$([char]0x25CB)`e[0m not synced yet on this PC: run sync"; return }
-    git -C $StRepo fetch -q origin 2>&1 | Out-Null
-    if ($LASTEXITCODE) { Write-Host "  `e[90m$([char]0x25CB) no connection to GitHub: can't compare`e[0m"; return }
+    if (-not (Invoke-StFetch)) { Write-Host "  `e[90m$([char]0x25CB) no connection to GitHub: can't compare`e[0m"; return }
     $latest = "$(git -C $StRepo rev-parse origin/main)"
     $line = {
         param($who, $have)
