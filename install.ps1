@@ -172,12 +172,29 @@ $KeepIfThere = @('config\fastfetch\config.jsonc', 'config\fastfetch\config-hw.js
 $Prev = $null
 if ($Previous -and (Get-Command git -ErrorAction SilentlyContinue)) { $Prev = "$(& git -C $Repo rev-parse -q --verify "$Previous^{commit}" 2>$null)".Trim() }
 $backedUp = 0; $changed = 0; $kept = @()
+# linhas que o comando theme muda (o tema escolhido): nao contam como mudanca local, e ficam ao atualizar o ficheiro
+$ThemeLine = @{ 'config\helix\config.toml' = '(?m)^theme *= *"[^"]*"'; 'config\micro\settings.json' = '"colorscheme": *"[^"]*"' }
+$norm = { param($t) "$t".Replace("`r`n", "`n").TrimEnd() }
 foreach ($m in $Map) {
     $src = Join-Path $Repo $m[0]; $dst = $m[1]
     if (-not (Test-Path $src)) { Warn "missing in the repo: $($m[0])"; continue }
     if (($KeepIfThere -contains $m[0]) -and (Test-Path $dst)) { continue }
     if ((Test-Path $dst) -and ((Get-FileHash $dst).Hash -eq (Get-FileHash $src).Hash)) { continue }
-    if ($Prev -and (Test-Path $dst)) {
+    $tl = $ThemeLine[$m[0]]; $mine = $null
+    if ($tl -and (Test-Path $dst)) {
+        # (compara como se a linha do tema fosse a do repo; igual -> nada a fazer; senao atualiza e volta a por o tema)
+        $live = [IO.File]::ReadAllText($dst); $new = [IO.File]::ReadAllText($src)
+        $mine = [regex]::Match($live, $tl).Value; $repoLine = [regex]::Match($new, $tl).Value
+        if ($mine -and $repoLine) {
+            $liveN = & $norm ([regex]::new($tl).Replace($live, $repoLine.Replace('$', '$$'), 1))
+            if ($liveN -eq (& $norm $new)) { continue }
+            if ($Prev) {
+                $oldT = (& git -C $Repo show "${Prev}:$($m[0].Replace('\', '/'))" 2>$null) -join "`n"
+                if ($oldT -and $liveN -ne (& $norm ([regex]::new($tl).Replace($oldT, $repoLine.Replace('$', '$$'), 1)))) { Copy-Item $src "$dst.new" -Force; $kept += $dst; continue }
+            }
+        } else { $tl = $null }
+    }
+    if ($Prev -and (Test-Path $dst) -and -not $tl) {
         # (pelo id do git: o do ficheiro daqui, com as mesmas regras de fim de linha, contra o da versao anterior)
         $rel = $m[0].Replace('\', '/')
         $old = "$(& git -C $Repo rev-parse -q --verify "${Prev}:$rel" 2>$null)".Trim()
@@ -193,6 +210,7 @@ foreach ($m in $Map) {
         Copy-Item $dst $b -Force; $backedUp++
     }
     Copy-Item $src $dst -Force
+    if ($tl -and $mine) { $t = [IO.File]::ReadAllText($dst); [IO.File]::WriteAllText($dst, [regex]::new($tl).Replace($t, $mine.Replace('$', '$$'), 1)) }   # (o tema que estava)
 }
 foreach ($d in "$Cfg\cmds", "$Cfg\superterminal", "$Local\superterminal") { New-Item -ItemType Directory $d -Force | Out-Null }
 # placa grafica: sem uma a serio (VM, "Basic Display Adapter", PC sem drivers) nao ha OpenGL e o WezTerm nao abre;
