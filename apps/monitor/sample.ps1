@@ -5,6 +5,10 @@ $cores = [Environment]::ProcessorCount
 $ramTotal = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
 $gpuName = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Basic|Virtual|Remote|Parsec' } | ForEach-Object Name)[0]
 $cpuName = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name.Trim() -replace '\s+', ' ' -replace ' \d+-Core Processor', '' -replace '\(R\)|\(TM\)', ''
+# quem nos lanca (monitor, ou o ssh do outro lado) redireciona o stdin e nunca escreve la: EOF = morreu -> sair.
+# (escrever para um pipe fechado nao da erro no .NET, por isso o stdin e o sinal fiavel; a mao numa consola: dorme)
+$inS = if ([Console]::IsInputRedirected) { [Console]::OpenStandardInput() }; $inB = [byte[]]::new(64)
+$stdin = if ($inS) { $inS.ReadAsync($inB, 0, $inB.Length) }   # (o Console.In.ReadLineAsync bloqueia no Windows; o ReadAsync do stream corre noutro thread)
 while ($true) {
     $cpu = (Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'").PercentProcessorTime
     $gpu = try { $g = @(Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object Name -like '*engtype_3D'); [Math]::Min(100, ($g | Measure-Object UtilizationPercentage -Sum).Sum) } catch { $null }
@@ -19,5 +23,6 @@ while ($true) {
                 cpuName = $cpuName; gpuName = $gpuName; up = [int]((Get-Date) - $os.LastBootUpTime).TotalHours; procs = $procs } | ConvertTo-Json -Compress -Depth 3))
     [Console]::Out.Flush() } catch { break }
     if ($Once) { break }
-    Start-Sleep -Seconds $Every
+    if ($stdin) { if ($stdin.Wait([int]($Every * 1000))) { if ($stdin.Result -le 0) { break }; $stdin = $inS.ReadAsync($inB, 0, $inB.Length) } }
+    else { Start-Sleep -Seconds $Every }
 }
