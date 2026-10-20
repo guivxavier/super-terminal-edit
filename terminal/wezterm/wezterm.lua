@@ -292,6 +292,16 @@ local PALETTE_CMDS = {
   { 'super sync', 'update every PC' }, { 'lg', 'lazygit' }, { 'reset', 'fix a broken terminal' }, { 'ff', 'clear' },
 }
 local SETUP_STEPS = { 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'keys', 'widgets', 'sudo' }
+-- atalho do terminal so quando o painel esta num shell; dentro de um programa (micro, hx, lazygit...) a tecla e dele
+-- (ex.: Ctrl+Q sai do micro). O ssh conta como shell: do outro lado esta um prompt.
+local SHELLS = { ['pwsh.exe'] = true, ['powershell.exe'] = true, ['cmd.exe'] = true, ['wsl.exe'] = true, ['wslhost.exe'] = true, zsh = true, bash = true, ['ssh.exe'] = true }
+local function in_shell(pane) return SHELLS[(pane:get_foreground_process_name() or ''):lower():match('[^\\/]+$') or ''] end
+local function shell_only(key, action)
+  return wezterm.action_callback(function(window, pane)
+    if in_shell(pane) then window:perform_action(action, pane)
+    else window:perform_action(act.SendKey { key = key, mods = 'CTRL' }, pane) end
+  end)
+end
 local function palette(window, pane)
   local fg = (pane:get_foreground_process_name() or ''):lower():match('[^\\/]+$') or ''
   local is_pwsh = fg == 'pwsh.exe' or fg == 'powershell.exe'
@@ -329,8 +339,8 @@ local actions = {
   { 'new_tab', 'CTRL+t', wezterm.action_callback(new_tab) },
   { 'split', 'CTRL+d', act.SplitHorizontal { domain = 'CurrentPaneDomain' } },
   { 'close', 'CTRL+w', wezterm.action_callback(close_or_hide) },
-  { 'prev_tab', 'CTRL+q', act.ActivateTabRelative(-1) },
-  { 'next_tab', 'CTRL+e', act.ActivateTabRelative(1) },
+  { 'prev_tab', 'CTRL+q', shell_only('q', act.ActivateTabRelative(-1)) },
+  { 'next_tab', 'CTRL+e', shell_only('e', act.ActivateTabRelative(1)) },
   { 'zoom', 'CTRL+SHIFT+z', act.TogglePaneZoomState },
   { 'fullscreen', 'CTRL+b', act.ToggleFullScreen },
   { 'search', 'CTRL+SHIFT+f', act.Search 'CurrentSelectionOrEmptyString' },
@@ -345,10 +355,11 @@ local actions = {
         window:perform_action(act.SendKey { key = 'c', mods = 'CTRL' }, pane)
       end
     end) },
-  { 'pane_left', 'CTRL+LeftArrow', act.ActivatePaneDirection 'Left' },
-  { 'pane_right', 'CTRL+RightArrow', act.ActivatePaneDirection 'Right' },
-  { 'pane_up', 'CTRL+UpArrow', act.ActivatePaneDirection 'Up' },
-  { 'pane_down', 'CTRL+DownArrow', act.ActivatePaneDirection 'Down' },
+  -- Alt+setas (como no Windows Terminal): as Ctrl+setas ficam para o shell / editores (saltar uma palavra)
+  { 'pane_left', 'ALT+LeftArrow', act.ActivatePaneDirection 'Left' },
+  { 'pane_right', 'ALT+RightArrow', act.ActivatePaneDirection 'Right' },
+  { 'pane_up', 'ALT+UpArrow', act.ActivatePaneDirection 'Up' },
+  { 'pane_down', 'ALT+DownArrow', act.ActivatePaneDirection 'Down' },
   { 'palette', 'CTRL+p', wezterm.action_callback(palette) },
 }
 local KEYS_FILE = wezterm.home_dir .. '\\.config\\superterminal\\keys.json'

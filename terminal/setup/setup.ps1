@@ -759,8 +759,8 @@ $KeyActs = @(
     @('prev_tab', 'Previous tab', 'CTRL+q'), @('next_tab', 'Next tab', 'CTRL+e'), @('zoom', 'Zoom the pane', 'CTRL+SHIFT+z'),
     @('fullscreen', 'Full screen / window', 'CTRL+b'), @('search', 'Search the scrollback', 'CTRL+SHIFT+f'),
     @('copy', 'Copy (no selection: stop)', 'CTRL+c'), @('paste', 'Paste', 'CTRL+v'),
-    @('pane_left', 'Pane on the left', 'CTRL+LeftArrow'), @('pane_right', 'Pane on the right', 'CTRL+RightArrow'),
-    @('pane_up', 'Pane above', 'CTRL+UpArrow'), @('pane_down', 'Pane below', 'CTRL+DownArrow'), @('palette', 'Command palette', 'CTRL+p'))
+    @('pane_left', 'Pane on the left', 'ALT+LeftArrow'), @('pane_right', 'Pane on the right', 'ALT+RightArrow'),
+    @('pane_up', 'Pane above', 'ALT+UpArrow'), @('pane_down', 'Pane below', 'ALT+DownArrow'), @('palette', 'Command palette', 'CTRL+p'))
 function Get-Keys { $h = @{}; if (Test-Path $KeysFile) { try { (Get-Content $KeysFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $h[$_.Name] = $_.Value } } catch {} }; $h }
 function Show-Key([string]$s) { ($s -replace 'Arrow$', '' -split '\+' | ForEach-Object { $_.ToLower() }) -join '+' }
 function ConvertTo-KeySpec($k) {
