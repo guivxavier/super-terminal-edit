@@ -39,7 +39,21 @@ do
     if chosen_font == '' then chosen_font = nil end
   end
 end
-config.font = wezterm.font_with_fallback { chosen_font or 'CaskaydiaMono Nerd Font', 'CaskaydiaMono Nerd Font' }
+-- (sem nenhuma escolhida e sem a CaskaydiaMono instalada - PC novo - as que vem com o WezTerm: JetBrains Mono + os
+-- icones Nerd Font. Pedir uma fonte que nao existe abria uma janela de aviso por cima de tudo e o terminal nao se usava)
+local function font_installed(file)
+  for _, dir in ipairs { (os.getenv('LOCALAPPDATA') or '') .. '\\Microsoft\\Windows\\Fonts', (os.getenv('WINDIR') or 'C:\\Windows') .. '\\Fonts' } do
+    local f = io.open(dir .. '\\' .. file, 'rb'); if f then f:close(); return true end
+  end
+  return false
+end
+if chosen_font then
+  config.font = wezterm.font_with_fallback { chosen_font, 'Symbols Nerd Font Mono' }
+elseif font_installed('CaskaydiaMonoNerdFont-Regular.ttf') then
+  config.font = wezterm.font_with_fallback { 'CaskaydiaMono Nerd Font', 'Symbols Nerd Font Mono' }
+else
+  config.font = wezterm.font_with_fallback { 'JetBrains Mono', 'Symbols Nerd Font Mono' }
+end
 config.font_size = 13   -- (o mesmo tamanho do Windows Terminal: com 12 as letras tinham menos pixeis e ficavam menos nitidas)
 config.line_height = 1.25
 -- letras nitidas como o ClearType do Windows Terminal (subpixel), sempre com o mesmo desenho
