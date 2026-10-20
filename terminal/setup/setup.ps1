@@ -400,6 +400,20 @@ $TsPage = @{
             info = { foreach ($p in @(Get-Pcs | Where-Object { -not $_.self })) { $ok = Test-SshKey $p.name; "$(if ($ok) { "$e[32m$([char]0xf00c)" } else { "$e[33m$([char]0xf10c)" })  $e[37m$($p.name)$e[90m  $(if ($ok) { 'no password' } else { 'asks for a password' })" } }
             done = { $o = @(Get-Pcs | Where-Object { -not $_.self }); $o -and -not @($o | Where-Object { -not (Test-SshKey $_.name) }) }; every = 15
             acts = @(, @('k', 'copy my key', { Copy-SshKey }))
+        },
+        @{ t = 'Only keys on this PC''s SSH server (no passwords)'
+            d = @('p  turns off password sign-in on this PC''s SSH server (Windows asks for admin): with the keys copied,',
+                'nobody can try passwords on it. Do it on every PC, after its key step.')
+            done = { "$(Get-Content "$env:ProgramData\ssh\sshd_config" -ErrorAction Ignore)" -match '(?m)^\s*PasswordAuthentication\s+no' -or -not (Test-Path "$env:WINDIR\System32\OpenSSH\sshd.exe") }; every = 10
+            acts = @(, @('p', 'turn passwords off', {
+                        $ps = @'
+$f = "$env:ProgramData\ssh\sshd_config"; Copy-Item $f "$f.bak-superterminal" -ErrorAction Ignore
+$s = Get-Content $f -Raw
+foreach ($k in 'PasswordAuthentication', 'KbdInteractiveAuthentication') { if ($s -match "(?m)^\s*#?\s*$k\b.*$") { $s = $s -replace "(?m)^\s*#?\s*$k\b.*$", "$k no" } else { $s = "$k no`r`n" + $s } }
+Set-Content $f $s -NoNewline; Restart-Service sshd; "sshd: passwords off"; Start-Sleep 2
+'@
+                        try { Start-Process $Pwsh -Verb RunAs -Wait -ArgumentList '-NoProfile', '-EncodedCommand', ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))) } catch { $script:Msg = "$e[33mcancelled" }
+                    }))
         }
     )
     end = 'Tailscale ready: ssh <name> opens your other PCs'
