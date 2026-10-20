@@ -86,7 +86,7 @@ $KvnHelp = @(
         use = @(@('ff', 'clear the shell (clear and ctrl+l do the same)'), @('reset', 'like on Linux: fixes a terminal left broken by an app (colours, cursor, mouse) and clears'), @('ffw', 'header live (every 2 s) on / off'))
         notes = @('the header lives in the top pane and redraws itself (live is the default)') }
     @{ g = 'pcs'; c = 'hub'; s = 'web page with your PCs, only inside your tailnet (also on the phone)'; ins = 'hub'
-        use = @(@('hub', 'open it (hub.<your domain> with Headscale)'), @('hub on', 'this PC serves it (starts with the session)'), @('hub off', 'stop serving it here'), @('hub status', 'is it running here?'), @('hub cert', 'https for hub.<your domain>: Let''s Encrypt through your Cloudflare DNS, renews by itself'))
+        use = @(@('hub', 'open it: hub.<your domain> with Headscale, otherwise it finds the PC that serves it'), @('hub on', 'this PC serves it (starts with the session)'), @('hub off', 'stop serving it here'), @('hub status', 'is it running here?'), @('hub cert', 'https for hub.<your domain>: Let''s Encrypt through your Cloudflare DNS, renews by itself'))
         notes = @('listens only on the Tailscale IP: outside the tailnet it does not exist', 'Headscale: add an extra_records A record hub.<domain> -> the IP of the PC that serves it') }
     @{ g = 'pcs'; c = 'monitor'; s = 'CPU, GPU, RAM, temperature and processes of your PCs, side by side'; ins = 'monitor'
         use = @(@('monitor', 'this PC and every PC named in setup > Tailscale (over ssh), every 2 s'))

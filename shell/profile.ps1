@@ -1519,7 +1519,18 @@ systemctl enable --now certbot.timer >/dev/null 2>&1 || true
                 $tn = try { (tailscale status --json 2>$null | ConvertFrom-Json).CurrentTailnet.Name } catch { '' }
                 if ($tn -match '^[^@\s]+\.[^@\s]+\.[a-z]+$' -and $tn -notmatch '\.ts\.net$') { "http://hub.$($tn -replace '^[^.]+\.')" }
             }
-            if ($u) { Start-Process $u } else { Write-Host "  no hub address: run hub on on the PC that serves it, then write its http://<tailscale ip> to $f" -ForegroundColor Yellow }
+            if (-not $u) {
+                # sem dominio (Tailscale normal): procura o PC que serve o hub (porta 443, depois 80, nos IPs dos teus PCs)
+                foreach ($pc in $Pcs) {
+                    if (-not $pc.ip) { continue }
+                    foreach ($port in 443, 80) {
+                        $t = [Net.Sockets.TcpClient]::new()
+                        try { if ($t.ConnectAsync($pc.ip, $port).Wait(400) -and $t.Connected) { $u = "$(if ($port -eq 443) { 'https' } else { 'http' })://$($pc.ip)"; break } } catch {} finally { $t.Close() }
+                    }
+                    if ($u) { break }
+                }
+            }
+            if ($u) { Start-Process $u } else { Write-Host "  no hub found: run hub on on the PC that should serve it (or write its address to $f)" -ForegroundColor Yellow }
         }
     }
 }
