@@ -125,11 +125,15 @@ function Send-DoneToast([string]$cmd, [TimeSpan]$t, [bool]$ok) {
 # zoxide (init em cache; regenera quando o zoxide e atualizado)
 # (procurar o zoxide no PATH custava ~80 ms em cada separador: com a cache feita ha menos de 1 dia, usa-a logo)
 $zc = "$env:LOCALAPPDATA\pwsh-init-cache\zoxide.ps1"
-if ((Test-Path $zc) -and ((Get-Date) - (Get-Item $zc).LastWriteTime).TotalDays -lt 1) { . $zc }
-elseif ($zx = (Get-Command zoxide -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source) {
+$zok = $false
+if ((Test-Path $zc) -and ((Get-Date) - (Get-Item $zc).LastWriteTime).TotalDays -lt 1) { try { . $zc; $zok = $true } catch { Remove-Item $zc -ErrorAction SilentlyContinue } }   # (estragada: refaz ja)
+if (-not $zok -and ($zx = (Get-Command zoxide -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source)) {
     New-Item -ItemType Directory (Split-Path $zc) -Force | Out-Null
-    zoxide init powershell | Out-String | Set-Content $zc -Encoding utf8
-    . $zc
+    # (para um temporario e so depois o nome final: com varios shells a abrir ao mesmo tempo, um lia o ficheiro a meio
+    # da escrita de outro e o perfil dava "Missing closing '}'")
+    $zi = zoxide init powershell | Out-String
+    $zt = "$zc.$PID.tmp"; [IO.File]::WriteAllText($zt, $zi, [Text.UTF8Encoding]::new($false)); try { [IO.File]::Move($zt, $zc, $true) } catch { Remove-Item $zt -ErrorAction SilentlyContinue }
+    . ([scriptblock]::Create($zi))
 }
 # o zoxide envolve o prompt (e com isso perde-se o $? do ultimo comando): repoe o nosso; ele chama o __zoxide_hook no fim
 if ($global:__zoxide_prompt_old) { $function:global:prompt = $global:__zoxide_prompt_old }
@@ -1104,7 +1108,7 @@ if (Test-Path "$env:ProgramFiles\GitHub CLI\gh.exe") {
     if (-not (Test-Path $ghc) -or ((Get-Date) - (Get-Item $ghc).LastWriteTime).TotalDays -gt 7) {
         (& "$env:ProgramFiles\GitHub CLI\gh.exe" completion -s powershell | Out-String).Replace('$RequestComp="$Program __complete $Arguments"', '$RequestComp="$Program __complete $Arguments 2>`$null"') | Set-Content $ghc -Encoding utf8
     }
-    . $ghc
+    try { . $ghc } catch { Remove-Item $ghc -ErrorAction SilentlyContinue }   # (cache estragada - dois shells a escreve-la ao mesmo tempo: refeita no proximo)
 }
 Register-ArgumentCompleter -Native -CommandName winget -ScriptBlock {
     param($word, $ast, $cursor)
