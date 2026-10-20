@@ -56,7 +56,22 @@ config.tab_bar_at_bottom = true
 config.show_new_tab_button_in_tab_bar = false
 config.inactive_pane_hsb = { saturation = 1.0, brightness = 1.0 }   -- (o cabecalho nunca tem foco: nao o escurecer)
 -- OpenGL: com WebGpu a janela demorava a aparecer depois de escondida (Ctrl+Alt+T); OpenGL pinta em ~10 ms
-config.front_end = 'OpenGL'
+-- Sem placa grafica a serio (VM sem aceleracao, PC sem drivers: so o "Microsoft Basic Render Driver") nao ha OpenGL e
+-- o WezTerm fechava logo ao abrir: ai desenha por software. Visto uma vez por arranque (wezterm.GLOBAL)
+local function pick_front_end()
+  if wezterm.GLOBAL.front_end then return wezterm.GLOBAL.front_end end
+  local fe = 'OpenGL'
+  local ok, gpus = pcall(function() return wezterm.gui.enumerate_gpus() end)
+  if ok and gpus and #gpus > 0 then
+    fe = 'Software'
+    for _, g in ipairs(gpus) do
+      if g.device_type == 'DiscreteGpu' or g.device_type == 'IntegratedGpu' then fe = 'OpenGL' end
+    end
+  end
+  wezterm.GLOBAL.front_end = fe
+  return fe
+end
+config.front_end = pick_front_end()
 config.window_close_confirmation = 'NeverPrompt'
 -- tamanho em modo janela (arranca em ecra inteiro; F11 passa a janela): cabe num ecra 1080p. Com 50 linhas a janela
 -- ficava mais alta que o ecra e o topo, com o cabecalho, ficava de fora
