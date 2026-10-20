@@ -68,7 +68,7 @@ $Apps = @(
     # (o ffmpeg vem com o yt-dlp: o winget instala o yt-dlp.FFmpeg como dependencia; um 2.o, o Gyan.FFmpeg, chocava
     # com o comando "ffmpeg" que ja existia e era reinstalado a cada vez)
     @('charmbracelet.glow', 'markdown'), @('yt-dlp.yt-dlp', 'yt (and ffmpeg)'), @('shinchiro.mpv', 'the video player'),
-    @('hpjansson.Chafa', 'images in the terminal'), @('jqlang.jq', 'JSON'), @('bootandy.dust', 'disk usage'), @('tldr-pages.tlrc', 'tldr')
+    @('hpjansson.Chafa', 'images in the terminal'), @('oschwartz10612.Poppler', 'view: pdf pages'), @('jqlang.jq', 'JSON'), @('bootandy.dust', 'disk usage'), @('tldr-pages.tlrc', 'tldr')
 )
 # winget: "Failed to extract the contents of the archive" (-1978335140) acontece em alguns Windows com o metodo de
 # extracao por omissao (o do Explorador); a solucao documentada e o "tar". So durante a instalacao: no fim volta tudo

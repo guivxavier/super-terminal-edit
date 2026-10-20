@@ -59,6 +59,7 @@ function Show-Markdown([string]$file) {
 }
 
 function Show-Pdf([string]$file) {
+    if (-not (Get-Command pdfinfo -ErrorAction SilentlyContinue)) { Write-Host '  pdfs need Poppler: winget install oschwartz10612.Poppler (the installer puts it in)' -ForegroundColor Yellow; return }
     $n = [int]("$(& pdfinfo $file 2>$null | Where-Object { $_ -match '^Pages:' } | Select-Object -First 1)" -replace '\D', '')
     if (-not $n) { Write-Host "  couldn't read this pdf" -ForegroundColor Yellow; return }
     $name = Split-Path $file -Leaf; $p = 1; $shown = 0
