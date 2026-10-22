@@ -113,12 +113,36 @@ function Get-Base($a) { $a.transportUrl -replace '/manifest\.json$', '' }
 # trabalho dos threads: descarrega posters em falta e gera os sixel (memória + disco)
 $ImgWork = @'
 param($items, $dir, $chafa, $w, $h, $cache, $busy)
+# imagem inteira? (JPEG: o marcador de fim FF D9 nos ultimos 4 KB; PNG: IEND no fim). Um download que caiu a meio
+# deixava um poster cortado na cache para sempre ("Corrupt JPEG data: premature end of data segment")
+$whole = {
+    param($f)
+    try {
+        $fs = [IO.File]::OpenRead($f)
+        try {
+            if ($fs.Length -lt 64) { return $false }
+            $h = [byte[]]::new(2); [void]$fs.Read($h, 0, 2)
+            $n = [int][Math]::Min(4096, $fs.Length); [void]$fs.Seek(-$n, 'End'); $t = [byte[]]::new($n); [void]$fs.Read($t, 0, $n)
+            if ($h[0] -eq 0xFF -and $h[1] -eq 0xD8) { for ($i = $n - 2; $i -ge 0; $i--) { if ($t[$i] -eq 0xFF -and $t[$i + 1] -eq 0xD9) { return $true } }; return $false }
+            if ($h[0] -eq 0x89 -and $h[1] -eq 0x50) { return [Text.Encoding]::ASCII.GetString($t, $n - 8, 4) -eq 'IEND' }
+            $true
+        } finally { $fs.Close() }
+    } catch { $false }
+}
+foreach ($x in $items) {
+    $f = "$dir\$($x.n).jpg"
+    if ((Test-Path $f) -and -not (& $whole $f)) { Remove-Item $f, "$dir\six\$($x.n)-*" -Force -ErrorAction SilentlyContinue }   # cortado: volta a pedir
+}
 # descarrega para .part e so depois muda o nome (um .jpg a meio nunca e lido nem fica na cache); com limites de tempo
-$a = @('--parallel', '-sL', '--fail', '--connect-timeout', '5', '--max-time', '20')   # --fail: um poster que nao existe nao fica guardado como pagina de erro
+$a = @('--parallel', '-sL', '--fail', '--connect-timeout', '5', '--max-time', '20', '-w', '%{exitcode} %{filename_effective}\n')   # --fail: um poster que nao existe nao fica guardado como pagina de erro
 foreach ($x in $items) { if ($x.u -and -not (Test-Path "$dir\$($x.n).jpg")) { $a += $x.u, '-o', "$dir\$($x.n).jpg.part" } }
-if ($a.Count -gt 6) {
-    & curl.exe @a 2>$null
-    foreach ($x in $items) { $p = "$dir\$($x.n).jpg.part"; if (Test-Path $p) { try { [IO.File]::Move($p, "$dir\$($x.n).jpg", $true) } catch {} } }
+if ($a.Count -gt 8) {
+    $done = @{}; foreach ($l in @(& curl.exe @a 2>$null)) { if ($l -match '^0 (.+)$') { $done[$Matches[1].Trim()] = 1 } }
+    foreach ($x in $items) {
+        $p = "$dir\$($x.n).jpg.part"; if (-not (Test-Path $p)) { continue }
+        # so o que o curl acabou (codigo 0) e esta inteiro; o resto vai fora e e pedido outra vez da proxima
+        if ($done.ContainsKey($p) -and (& $whole $p)) { try { [IO.File]::Move($p, "$dir\$($x.n).jpg", $true) } catch {} } else { Remove-Item $p -Force -ErrorAction SilentlyContinue }
+    }
 }
 foreach ($x in $items) {
     $k = "$($x.n)-$w-$h-s"; $sf = "$dir\six\$k.six"
@@ -393,11 +417,21 @@ function Get-TilePos([int]$slot) { @{ y = $L.top + [Math]::Floor($slot / $L.cols
 function Draw-TileText($m, [int]$slot, [bool]$sel) {
     $p = Get-TilePos $slot
     $year = if ($m.releaseInfo) { "$($m.releaseInfo)" } elseif ($m.year) { "$($m.year)" } else { '' }
-    $info = (@($year, $(if ($m.imdbRating) { "$([char]0xf005) $($m.imdbRating)" })) | Where-Object { $_ }) -join '  '
+    # a nota fica sempre inteira: se nao couber, o ano encurta (2008-2015 -> 2008-15 -> 2008)
+    $rate = if ($m.imdbRating) { "$([char]0xf005) $($m.imdbRating)" } else { '' }
+    $room = $L.pw - 2; $sep = '  '
+    if ($rate) {
+        # (o primeiro que couber: inteiro, encurtado, com um so espaco, so o ano de inicio, sem ano)
+        $short = $year -replace '^(\d{4})\D+\d{2}(\d{2})$', '$1-$2'; $start = $year -replace '^(\d{4}).*$', '$1'
+        $opt = @(@($year, '  '), @($short, '  '), @($short, ' '), @($start, ' '), @('', '')) | Where-Object { $_[0].Length + $_[1].Length + $rate.Length -le $room } | Select-Object -First 1
+        $year = $opt[0]; $sep = $opt[1]
+    }
+    $plain = (@($year, $rate) | Where-Object { $_ }) -join $sep
+    $info = if ($rate -and $plain.Length -le $room) { "$(if ($year) { "$year$sep" })$e[33m$([char]0xf005)$e[90m $($m.imdbRating)$(' ' * ($room - $plain.Length))" } else { Fit $plain $room }
     $heart = if (Test-Fav $m.id) { "$e[31m$([char]0x2665)" } else { ' ' }
     "$e[$($p.y + $L.ph);$($p.x)H" + $(if ($sel) { "$e[${Accent}m" + ([string][char]0x2501 * $L.pw) } else { ' ' * $L.pw }) +
     "$e[$($p.y + $L.ph + 1);$($p.x)H$e[$(if ($sel) { '1;97' } else { '0;37' })m$(Fit $m.name $L.pw)" +
-    "$e[$($p.y + $L.ph + 2);$($p.x)H$e[90m$(Fit $info ($L.pw - 2)) $heart$e[0m"
+    "$e[$($p.y + $L.ph + 2);$($p.x)H$e[90m$info $heart$e[0m"
 }
 function Draw-Filters($v, $items) {
     $chip = { param($k, $n, $val) "$e[90m$k $e[37m$n $e[48;2;$($StTheme.sel);97m $val $e[0m     " }
