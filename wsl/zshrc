@@ -102,7 +102,7 @@ yt() { __wz spawn -- 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(w
 st() { __wz spawn -- 'C:\Program Files\PowerShell\7\pwsh.exe' -NoLogo -File "$(wslpath -w $WINHOME)\\.config\\st-tui.ps1" "$@" }
 # ssh desktop / ssh laptop com o ssh.exe do Windows (usa as chaves e o ssh-agent do Windows; a do laptop tem passphrase)
 ssh() { if (( $# == 1 )) && (( ${${(f)"$(__pcs)"}[(Ie)$1]} )); then __ff_free; /mnt/c/Windows/System32/OpenSSH/ssh.exe -t $1 'pwsh -NoLogo'; ff; else command ssh "$@"; fi }
-cpwd() { local p=${1:+${1:A}}; p=${p:-$PWD}; print -rn -- $p | clip.exe; print -P "  %F{green}✓%f copied  %F{8}$p%f" }
+cpwd() { local p=${1:+${1:A}}; p=${p:-$PWD}; print -rn -- $p | /mnt/c/Windows/System32/clip.exe; print -P "  %F{green}✓%f copied  %F{8}$p%f" }
 
 # ---- ls igual ao rls: PC + caminho + total, depois icone, nome, tamanho, data (ll / lt continuam no eza) ----
 zmodload -F zsh/stat b:zstat
