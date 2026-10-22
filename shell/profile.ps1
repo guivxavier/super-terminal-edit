@@ -4,6 +4,9 @@ if (-not $env:KVN_CMD -and [Environment]::GetCommandLineArgs() -match '^-(c|comm
 # So dentro do SuperTerminal: o WezTerm marca as sessoes dele com SUPERTERMINAL=1 (passa tambem para o WSL e para o
 # ssh de um PC para o outro). Fora dele (VS Code, Windows Terminal, pwsh solto) o PowerShell fica como de origem
 if (-not $env:SUPERTERMINAL -and -not $env:KVN_CMD) { return }
+# um "wsl" daqui tambem e SuperTerminal (zsh, prompt, Ctrl+W): o WezTerm ja o diz ao WSL dele, mas numa sessao ssh
+# ninguem o fazia; o SSH_CONNECTION vai junto (o prompt do zsh mostra "ssh")
+if ($env:SUPERTERMINAL) { $wl = @("$env:WSLENV" -split ':' | Where-Object { $_ }); $env:WSLENV = (@($wl) + @('SUPERTERMINAL', 'KVN_COMPACT', 'SSH_CONNECTION' | Where-Object { $_ -notin @($wl -replace '/.*') })) -join ':' }
 # git com o delta (diffs com cores e numeros de linha) so aqui: pelo ambiente, nao no ~\.gitconfig (que o VS Code e os
 # outros terminais tambem leem)
 $env:GIT_CONFIG_COUNT = '6'

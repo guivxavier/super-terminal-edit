@@ -265,7 +265,8 @@ end)
 local function close_or_hide(window, pane)
   -- dentro de um ssh: o Ctrl+W vai para o outro PC (o perfil de la sai so da sessao remota), o painel fica
   local fg = (pane:get_foreground_process_name() or ''):lower()
-  if fg:match('ssh%.exe$') then
+  -- (e dentro do WSL: o zsh do SuperTerminal faz exit e volta ao shell de onde veio; num painel so de WSL, fecha-o)
+  if fg:match('ssh%.exe$') or fg:match('wsl%.exe$') or fg:match('wslhost%.exe$') then
     window:perform_action(act.SendKey { key = 'w', mods = 'CTRL' }, pane); return
   end
   local n = 0

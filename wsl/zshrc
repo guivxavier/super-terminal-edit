@@ -44,7 +44,9 @@ __prompt_pre() {
 }
 __prompt_exec() { __t0=$EPOCHREALTIME }
 autoload -Uz add-zsh-hook; add-zsh-hook precmd __prompt_pre; add-zsh-hook preexec __prompt_exec
-PROMPT='%B%F{green}%f%b %B%F{green}wsl%f%b %(!.%B%F{red}root%f%b .)%F{magenta}%n%F{8}@%F{blue}%m %F{cyan}$(__pwd_seg)$(__git_info) ${__cmd_seg}%f'
+# vindo de um ssh (o WSL de outro PC): " ssh" a frente, como no PowerShell
+__ssh_seg=''; [[ -n $SSH_CONNECTION ]] && __ssh_seg=$'%B%F{green} ssh%f%b '
+PROMPT='${__ssh_seg}%B%F{green}%f%b %B%F{green}wsl%f%b %(!.%B%F{red}root%f%b .)%F{magenta}%n%F{8}@%F{blue}%m %F{cyan}$(__pwd_seg)$(__git_info) ${__cmd_seg}%f'
 
 # ---- fastfetch + caixa "commands" + cabecalho fixo (igual ao PowerShell do Windows) ----
 # cabecalho fixo: depois do fastfetch, a regiao de scroll (DECSTBM) comeca abaixo da linha separadora; re-afirmada
