@@ -1380,7 +1380,7 @@ function Sync-Pcs {
         if (-not $rh) { & $say "  `e[31m$([char]0x2717)`e[0m ${pc}: no answer over ssh"; continue }
         # (com o cmd como shell do ssh de la, o caminho chegava com as aspas do git ('C:/...') e "nao e um repositorio":
         # o git-receive-pack corre entao pelo PowerShell, que as tira)
-        $rp = if ($SshShell[$pc] -eq 'cmd') { , '--receive-pack=powershell -NoProfile -Command git-receive-pack' } else { @() }
+        $rp = @(); if ($SshShell[$pc] -eq 'cmd') { $rp = @('--receive-pack=powershell -NoProfile -Command git-receive-pack') }
         git -C $StRepo -c "core.sshCommand=$gitSsh" push -q -f @rp "${pc}:$($rh.Replace('\', '/'))/.local/superterminal/repo" HEAD:refs/heads/sync-incoming 2>&1 | Out-Null
         if ($LASTEXITCODE) { & $say "  `e[31m$([char]0x2717)`e[0m ${pc}: couldn't send it the new version"; continue }
         $r = @(Invoke-Remote $pc "`$env:KVN_CMD = '1'; `$env:SUPERTERMINAL = '1'; . `$PROFILE.CurrentUserCurrentHost; Update-SuperTerminal -Incoming" | Where-Object { "$_".Trim() })
