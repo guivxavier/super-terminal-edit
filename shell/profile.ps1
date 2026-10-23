@@ -1337,7 +1337,9 @@ function Update-SuperTerminal {
     if ($before -eq $after) { & $say "  `e[32m$([char]0x2713)`e[0m already on the latest version `e[90m($short)`e[0m"; return $true }
     $n = if ($before) { "$(git -C $StRepo rev-list --count "$before..$after") new changes" } else { 'first version' }
     $ia = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$StRepo\install.ps1", '-SkipApps', '-Quiet') + $(if ($before) { '-Previous', $before } else { @() })
-    $r = "$(& $PwshExe @ia 2>&1 | Select-Object -Last 1)".Trim()
+    # (pelo Windows PowerShell, como o install.cmd e o get.ps1: o instalador e feito para ele, e com o "Acesso
+    # controlado a pastas" ligado e o powershell.exe que esta autorizado; o pwsh.exe nao escrevia o perfil em Documentos)
+    $r = "$(& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @ia 2>&1 | Select-Object -Last 1)".Trim()
     if ($r -match '^applied:') { Set-Content "$StRepo\..\applied.txt" $after }
     & $say "  `e[32m$([char]0x2193)`e[0m updated to $short `e[90m($n; $r)`e[0m$(if ($r -notmatch '^applied: 0 ') { "`n  `e[90mopen a new tab to use it`e[0m" })"
     $true
