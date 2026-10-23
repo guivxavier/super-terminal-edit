@@ -1164,6 +1164,10 @@ function Show-Menu {
 
 if ($env:SUPERTERMINAL_SETUP_TEST) { return }   # (testes: so as funcoes)
 [Console]::Write("$e[?1049h$e[?25l")
+# um ssh terminado a forca deixa a consola com "VT input" (0x200): as setas chegavam como texto (ESC [ A) e o ReadKey
+# dos menus nao as via. Tira-o (a consola e a mesma do shell, que fica bem tambem)
+$inH = [Su.Con]::GetStdHandle(-10); $inMode = 0
+if ([Su.Con]::GetConsoleMode($inH, [ref]$inMode) -and ($inMode -band 0x200)) { [void][Su.Con]::SetConsoleMode($inH, $inMode -band (-bnot 0x200)) }
 try {
     if ($Step) { if ($Steps.Contains($Step)) { & $Steps[$Step].run } else { Say "no step '$Step' (steps: $($Steps.PSBase.Keys -join ', '))" '31'; Pause-Key } }
     else { Show-Menu }

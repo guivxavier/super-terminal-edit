@@ -986,7 +986,14 @@ color-link scrollbar "$($t.line)"
     Write-Host "  $([char]0xf00c) $($t.title)" -ForegroundColor Green
 }
 Register-ArgumentCompleter -CommandName theme -ParameterName Name -ScriptBlock { param($c, $p, $w) $Themes.Keys | Where-Object { $_ -like "$w*" } }
-function reset {[Console]::Write("$([char]27)c$([char]27)[?1049l$([char]27)[?1000l$([char]27)[?1003l$([char]27)[?1006l$([char]27)[r$([char]27)[0m$([char]27)[?25h"); ff }
+function reset {
+    [Console]::Write("$([char]27)c$([char]27)[?1049l$([char]27)[?1000l$([char]27)[?1003l$([char]27)[?1006l$([char]27)[r$([char]27)[0m$([char]27)[?25h")
+    # (e o teclado: um ssh terminado a forca deixa a consola em "VT input" e as setas deixam de chegar as apps)
+    if (-not ('Kvn.Con' -as [type])) { Add-Type -Namespace Kvn -Name Con -MemberDefinition '[DllImport("kernel32.dll")] public static extern System.IntPtr GetStdHandle(int n); [DllImport("kernel32.dll")] public static extern bool GetConsoleMode(System.IntPtr h, out uint m); [DllImport("kernel32.dll")] public static extern bool SetConsoleMode(System.IntPtr h, uint m);' }
+    $h = [Kvn.Con]::GetStdHandle(-10); $m = 0
+    if ([Kvn.Con]::GetConsoleMode($h, [ref]$m) -and ($m -band 0x200)) { [void][Kvn.Con]::SetConsoleMode($h, $m -band (-bnot 0x200)) }
+    ff
+}
 # ao sair de uma sessao SSH interativa (ssh <host>), limpa logo o ecra
 # ---- ssh desktop / ssh laptop: abre o pwsh do outro PC ('pwsh -NoLogo': sem o banner), com avisos claros ----
 # (mesmo PC, sessao que ja vem de la, nome que nao resolve, desligado, sshd parado, chave recusada)
