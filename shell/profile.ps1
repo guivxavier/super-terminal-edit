@@ -1588,7 +1588,7 @@ function spotify {
     if (Open-InTab 'spotify' (@('spotify_player') + $args)) { return }
     Clear-FfRegion; $a = $args
     Invoke-Zoomed {
-        Set-PaneHints 'g s|search;enter|play;n p|next / prev;space|pause;l|lyrics;D|device;?|keys;q|quit'
+        Set-PaneHints 'g s|search;tab|to the results;enter|play;n p|next / prev;space|pause;l|lyrics;D|device;q|quit'
         try { spotify_player @a } finally { Set-PaneHints '' }
     }
 }
