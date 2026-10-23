@@ -8,3 +8,6 @@
 *.log
 tests/out/
 terminal/wezterm/session.json
+# estado dos plugins do Claude Code (ruflo), nao e do SuperTerminal
+.claude-flow/
+.swarm/

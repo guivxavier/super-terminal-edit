@@ -40,6 +40,6 @@ try {
 'as Guest Additions (copiar / colar entre o PC e a VM) instalam-se sozinhas no fim.'
 'quando estiveres no ambiente de trabalho da VM:'
 "  1. snapshot limpo:  & '$vbm' snapshot $Name take limpo"
-'  2. na VM, no PowerShell (como o colega):  irm https://raw.githubusercontent.com/kevgoncalves/SuperTerminal/main/get.ps1 | iex'
+'  2. na VM, no PowerShell (como o colega):  irm https://raw.githubusercontent.com/guivxavier/super-terminal-edit/main/get.ps1 | iex'
 '     (ou o repo local: Explorador > Rede > \\vboxsvr\SuperTerminal > install.cmd)'
 "  para voltar ao zero:  & '$vbm' snapshot $Name restore limpo   (com a VM desligada)"

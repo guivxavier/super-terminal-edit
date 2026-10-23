@@ -16,7 +16,9 @@ Set-Service sshd -StartupType Automatic; Start-Service sshd; "sshd: $((Get-Servi
 
 # 2) firewall: so a porta 22 (a regra que o Windows cria; se faltar, cria-se)
 if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null }
-'firewall: porta 22 aberta'
+# (so para a rede do Tailscale e a rede local: o wake usa o IP local; da internet nao)
+Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -RemoteAddress '100.64.0.0/10', 'fd7a:115c:a1e0::/48', 'LocalSubnet'
+'firewall: porta 22 aberta (Tailscale e rede local)'
 
 # 3) chave do outro PC: contas de administrador usam C:\ProgramData\ssh\administrators_authorized_keys
 $pub = (Get-Content "$HOME\.config\desktop-key.pub" -Raw).Trim()

@@ -1,6 +1,6 @@
 # SuperTerminal setup: o que precisa de uma conta ou de uma escolha antes de o terminal ficar 100%.
 #   setup          -> ecra com os passos e o estado de cada um (enter faz / refaz o passo)
-#   setup <passo>  -> vai direto a um passo: font, tailscale, youtube, stremio, logo, sudo
+#   setup <passo>  -> vai direto a um passo: font, tailscale, youtube, stremio, logo, wsl, widgets, prompt, shortcuts, sudo
 # Cada passo e uma pagina guiada: os passos numerados, o atual com as teclas de atalho (abrir o browser, escolher um
 # ficheiro...), e cada um fica feito sozinho quando o setup o deteta. Credenciais (Stremio, Real-Debrid, Google) sao
 # escritas pela pessoa, aqui ou no browser; nada fica fora de ~\.config.
@@ -339,6 +339,8 @@ $ErrorActionPreference = 'Continue'
 if (-not (Test-Path "$env:WINDIR\System32\OpenSSH\sshd.exe")) { 'installing OpenSSH Server (from Windows Update, can take a few minutes)...'; dism.exe /Online /Add-Capability /CapabilityName:OpenSSH.Server~~~~0.0.1.0 /NoRestart }
 Set-Service sshd -StartupType Automatic; Start-Service sshd
 if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 | Out-Null }
+# porta 22 so para os outros PCs: a rede do Tailscale (IPv4 e IPv6) e a rede local (o wake usa o IP local); nao para a internet
+Set-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -RemoteAddress '100.64.0.0/10', 'fd7a:115c:a1e0::/48', 'LocalSubnet'
 "sshd: $((Get-Service sshd).Status)"; Start-Sleep 2
 '@
     $b64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ps))
@@ -404,7 +406,8 @@ $TsPage = @{
         @{ t = 'Only keys on this PC''s SSH server (no passwords)'
             d = @('p  turns off password sign-in on this PC''s SSH server (Windows asks for admin): with the keys copied,',
                 'nobody can try passwords on it. Do it on every PC, after its key step.')
-            done = { "$(Get-Content "$env:ProgramData\ssh\sshd_config" -ErrorAction Ignore)" -match '(?m)^\s*PasswordAuthentication\s+no' -or -not (Test-Path "$env:WINDIR\System32\OpenSSH\sshd.exe") }; every = 10
+            # (-Raw: com as linhas juntas por espacos o ^ so via a 1.a linha, e o passo nunca ficava feito)
+            done = { "$(Get-Content "$env:ProgramData\ssh\sshd_config" -Raw -ErrorAction Ignore)" -match '(?m)^\s*PasswordAuthentication\s+no' -or -not (Test-Path "$env:WINDIR\System32\OpenSSH\sshd.exe") }; every = 10
             acts = @(, @('p', 'turn passwords off', {
                         $ps = @'
 $f = "$env:ProgramData\ssh\sshd_config"; Copy-Item $f "$f.bak-superterminal" -ErrorAction Ignore
@@ -514,14 +517,15 @@ function Get-Res($a) { @($a.manifest.resources | ForEach-Object { if ($_ -is [st
 function Get-StremioState {
     # o que a conta tem (pedido a API do Stremio; guardado 5 s para as verificacoes dos passos nao repetirem)
     if ($script:StState -and ([datetime]::Now - $script:StState.t).TotalSeconds -lt 5) { return $script:StState }
-    $s = @{ t = [datetime]::Now; auth = $false; aio = $false; rd = 0; direct = 0 }
+    $s = @{ t = [datetime]::Now; auth = $false; aio = $false; rd = 0; torbox = 0; direct = 0 }
     if (Test-Path $StremioAuth) {
         try {
             $ad = @((Invoke-Stremio 'addonCollectionGet' @{ update = $true }).addons); $s.auth = $true
             $s.aio = [bool]@($ad | Where-Object { $_.manifest.id -eq 'aio-metadata' -or $_.manifest.name -match 'AIO ?Metadata' })
             $str = @($ad | Where-Object { (Get-Res $_) -contains 'stream' -and $_.transportUrl -notlike 'http://127.0.0.1*' })
-            $s.rd = @($str | Where-Object { $_.manifest.name -match '\bRD\b|debrid' -or $_.transportUrl -match 'realdebrid' }).Count
-            $s.direct = $str.Count - $s.rd
+            $s.rd = @($str | Where-Object { $_.manifest.name -match '\bRD\b|real-?debrid' -or $_.transportUrl -match 'realdebrid' }).Count
+            $s.torbox = @($str | Where-Object { $_.manifest.name -match '\bTB\b|torbox' -or $_.transportUrl -match 'torbox' }).Count
+            $s.direct = $str.Count - $s.rd - $s.torbox
         } catch {}
     }
     $script:StState = $s; $s
@@ -536,7 +540,14 @@ $StLogin = {
         Set-Content $StremioAuth $r.result.authKey -NoNewline; $script:StState = $null
     } catch { $script:Msg = "$e[31m$([char]0xf00d)  could not sign in (wrong email or password?)" } finally { $pw = $null }
 }
-function New-StremioPage([bool]$rd) {
+# servicos debrid: o modo escolhido fica em stremio-mode.txt ('rd' / 'torbox' / 'free'; o st le-o tambem).
+# (os passos leem o servico de $script:StMode: um GetNewClosure perdia as funcoes deste script)
+$Debrids = @{
+    rd     = @{ name = 'Real-Debrid'; price = 'from ~3 € / month'; site = 'https://real-debrid.com/premium'; key = 'https://real-debrid.com/apitoken' }
+    torbox = @{ name = 'TorBox'; price = 'from ~3 $ / month: Essential or above'; site = 'https://torbox.app/subscription'; key = 'https://torbox.app/settings' }
+}
+function New-StremioPage([string]$mode) {
+    $script:StMode = $mode; $db = $Debrids[$mode]; $rd = [bool]$db
     $acct = @{ t = 'Stremio account'
         d = @('s  sign in here with your Stremio account', 'c  no account yet? create one on stremio.com (free), then press s')
         done = { (Get-StremioState).auth }; every = 5
@@ -545,11 +556,11 @@ function New-StremioPage([bool]$rd) {
     }
     $boot = @{ t = 'Set up the account with Stremio Account Bootstrapper'
         d = @('b  opens the bootstrapper: sign in there with the same Stremio account,',
-            "pick the preset $(if ($rd) { '"standard"' } else { '"http-only" (no debrid)' }) and your language$(if ($rd) { ', Real-Debrid as the debrid service, and paste your key (k shows it)' }),",
+            "pick the preset $(if ($rd) { '"standard"' } else { '"http-only" (no debrid)' }) and your language$(if ($rd) { ", $($db.name) as the debrid service, and paste your API key (k shows it)" }),",
             'then Install. It replaces the addons the account had (Backup there first if you want them back).')
-        done = $(if ($rd) { { (Get-StremioState).rd -gt 0 } } else { { (Get-StremioState).direct -gt 0 } }); every = 5
-        note = $(if ($rd) { { "$((Get-StremioState).rd) Real-Debrid addons" } } else { { "$((Get-StremioState).direct) addons with direct links" } })
-        acts = $(if ($rd) { @(@('b', 'open the bootstrapper', { Open-Url 'https://bootstrapper.stremx.net' }), @('k', 'my Real-Debrid key', { Open-Url 'https://real-debrid.com/apitoken' })) } else { , @(, @('b', 'open the bootstrapper', { Open-Url 'https://bootstrapper.stremx.net' })) })
+        done = $(if ($rd) { { (Get-StremioState).($script:StMode) -gt 0 } } else { { (Get-StremioState).direct -gt 0 } }); every = 5
+        note = $(if ($rd) { { "$((Get-StremioState).($script:StMode)) $($Debrids[$script:StMode].name) addons" } } else { { "$((Get-StremioState).direct) addons with direct links" } })
+        acts = $(if ($rd) { @(@('b', 'open the bootstrapper', { Open-Url 'https://bootstrapper.stremx.net' }), @('k', "my $($db.name) API key", { Open-Url $Debrids[$script:StMode].key })) } else { , @(, @('b', 'open the bootstrapper', { Open-Url 'https://bootstrapper.stremx.net' })) })
     }
     $aio = @{ t = 'AIOMetadata (catalogs and search in st)'
         d = @('a  opens AIOMetadata: configure it (the defaults are fine), then Install to your Stremio account')
@@ -558,10 +569,10 @@ function New-StremioPage([bool]$rd) {
     }
     $steps = @($acct)
     if ($rd) {
-        $steps += @{ t = 'Real-Debrid premium'
-            d = @('r  opens real-debrid.com: create an account and get premium (from ~3 € / month)', 'enter when the account is premium')
-            done = { (Get-StremioState).rd -gt 0 }; every = 5
-            acts = @(, @('r', 'open real-debrid.com', { Open-Url 'https://real-debrid.com/premium' }))
+        $steps += @{ t = "$($db.name) premium"
+            d = @("r  opens $($db.name): create an account and get a paid plan ($($db.price))", 'enter when the account is paid')
+            done = { (Get-StremioState).($script:StMode) -gt 0 }; every = 5
+            acts = @(, @('r', "open $($db.name)", { Open-Url $Debrids[$script:StMode].site }))
         }
     }
     $steps += $boot, $aio
@@ -576,7 +587,7 @@ function New-StremioPage([bool]$rd) {
         }
     }
     @{
-        icon = [char]0xf26c; title = "Stremio (st) · $(if ($rd) { 'with Real-Debrid' } else { 'without debrid' })"
+        icon = [char]0xf26c; title = "Stremio (st) · $(if ($rd) { "with $($db.name)" } else { 'without debrid' })"
         intro = @('st shows the catalogs and streams of the addons on your Stremio account.')
         steps = $steps
         end = 'st is ready: run st'
@@ -586,8 +597,9 @@ function New-StremioPage([bool]$rd) {
 function Show-StremioSetup {
     $c = Pick-Card ([char]0xf26c) 'Stremio (st)' 'How do you want to watch?' @(
         @('With Real-Debrid   (recommended)', 'fast streams for almost everything, in the best quality; Real-Debrid is paid (~3 € / month)'),
+        @('With TorBox', 'the alternative to Real-Debrid: also fast cached streams; TorBox is paid (from ~3 $ / month)'),
         @('Without debrid   (free)', 'only addons with direct links: a smaller choice, and some titles have nothing'))
-    if ($c) { Set-Content "$StCfg\stremio-mode.txt" $(if ($c -eq 1) { 'rd' } else { 'free' }); Show-Guide (New-StremioPage ($c -eq 1)) }
+    if ($c) { $mode = @('rd', 'torbox', 'free')[$c - 1]; Set-Content "$StCfg\stremio-mode.txt" $mode; Show-Guide (New-StremioPage $mode) }
 }
 
 # ---------- 5. logo do cabecalho ----------
@@ -613,25 +625,76 @@ function ConvertTo-BlockArt([string]$text) {
     }
     @($rows | ForEach-Object { $_.TrimEnd() })
 }
-$Palettes = @(@('one dark', 'blue', 'cyan', 'magenta'), @('sunset', 'red', 'yellow', 'magenta'), @('forest', 'green', 'cyan', 'blue'), @('mono', 'white', 'white', 'white'))
+# paletas: cores do tema por nome (seguem o comando theme) ou #rrggbb; as so de #rrggbb fazem degrade (ate 9 tons,
+# o maximo do fastfetch: $1..$9 no "source", que podem mudar a meio da linha)
+$Palettes = @(
+    @('one dark', 'blue', 'cyan', 'magenta'), @('sunset', 'red', 'yellow', 'magenta'), @('forest', 'green', 'cyan', 'blue'), @('mono', 'white'),
+    @('ocean', '#00c6ff', '#0072ff', '#7f00ff'), @('fire', '#ffe259', '#ffa751', '#ff512f', '#dd2476'), @('aurora', '#43e97b', '#38f9d7', '#4facfe', '#a18cd1'),
+    @('candy', '#f9a8d4', '#c4b5fd', '#93c5fd', '#86efac'), @('rainbow', '#ff5f6d', '#ffc371', '#f9f871', '#6ee7b7', '#60a5fa', '#a78bfa'))
+# como as cores se espalham: bands = as faixas de origem (cima / meio / baixo), down / across / diagonal = degrade
+$LogoMixes = [ordered]@{ bands = 'bands (top / middle / bottom)'; down = 'gradient top to bottom'; across = 'gradient left to right'; diagonal = 'gradient diagonal' }
+$LogoFile = "$StCfg\logo.json"   # (a paleta e a mistura escolhidas; o desenho fica no config.jsonc do fastfetch)
 $AnsiOf = @{ blue = '34'; cyan = '36'; magenta = '35'; red = '31'; yellow = '33'; green = '32'; white = '97' }
 function Get-Logo {
     $t = [IO.File]::ReadAllText($FfConfig)
     $m = [regex]::Match($t, '"logo"\s*:\s*\{[^}]*?"source"\s*:\s*"((?:[^"\\]|\\.)*)"')
     $lines = if ($m.Success) { @(($m.Groups[1].Value -replace '\\n', "`n" -replace '\$\d', '' -replace '\\"', '"' -replace '\\\\', '\') -split "`n") } else { @() }
+    $j = if (Test-Path $LogoFile) { try { Get-Content $LogoFile -Raw | ConvertFrom-Json } catch {} }
+    if ($j.colors) { return @{ lines = $lines; colors = @($j.colors); mix = $(if ($LogoMixes.Contains("$($j.mix)")) { "$($j.mix)" } else { 'bands' }) } }
+    # (sem logo.json: as 3 cores que estao no config.jsonc, em faixas, como antes)
     $cm = [regex]::Match($t, '"color"\s*:\s*\{\s*"1"\s*:\s*"(\w+)"\s*,\s*"2"\s*:\s*"(\w+)"\s*,\s*"3"\s*:\s*"(\w+)"')
-    @{ lines = $lines; colors = $(if ($cm.Success) { @($cm.Groups[1].Value, $cm.Groups[2].Value, $cm.Groups[3].Value) } else { @('blue', 'cyan', 'magenta') }) }
+    @{ lines = $lines; colors = $(if ($cm.Success) { @($cm.Groups[1].Value, $cm.Groups[2].Value, $cm.Groups[3].Value) } else { @('blue', 'cyan', 'magenta') }); mix = 'bands' }
 }
 function Get-RowColor([int]$i, [int]$n) { if ($i -lt [Math]::Ceiling($n * 0.4)) { 1 } elseif ($i -lt [Math]::Ceiling($n * 0.6)) { 2 } else { 3 } }
-function Save-Logo($lines, $colors) {
-    # so o "source" e as cores do logo mudam no config.jsonc (o resto, com os comentarios, fica igual); copia antes
-    Copy-Item $FfConfig "$FfConfig.bak-setup" -Force
-    $src = (@(for ($i = 0; $i -lt $lines.Count; $i++) { "`$$(Get-RowColor $i $lines.Count)" + ($lines[$i] -replace '\\', '\\' -replace '"', '\"') }) -join '\n')
-    $t = [IO.File]::ReadAllText($FfConfig)
-    $t = [regex]::Replace($t, '("logo"\s*:\s*\{[^}]*?"source"\s*:\s*)"(?:[^"\\]|\\.)*"', { param($m) $m.Groups[1].Value + '"' + $src + '"' })
-    # (so o "color" do logo, o que tem a chave "1"; o do "display" fica)
-    $t = [regex]::new('"color"\s*:\s*\{\s*"1"[^}]*\}').Replace($t, "`"color`": { `"1`": `"$($colors[0])`", `"2`": `"$($colors[1])`", `"3`": `"$($colors[2])`" }", 1)
-    [IO.File]::WriteAllText($FfConfig, $t, [Text.UTF8Encoding]::new($false))
+function Get-LogoTones($colors, [string]$mix) {
+    # as cores finais ($1, $2...): numa paleta so de #rrggbb com degrade, 9 tons entre as cores dela
+    $colors = @($colors)
+    if ($mix -eq 'bands' -or $colors.Count -lt 2 -or @($colors | Where-Object { $_ -notmatch '^#[0-9a-fA-F]{6}$' }).Count) { return $colors }
+    $rgb = @($colors | ForEach-Object { , [Convert]::FromHexString($_.Substring(1)) })
+    @(for ($i = 0; $i -lt 9; $i++) {
+            $p = $i / 8 * ($rgb.Count - 1); $a = [Math]::Min([int][Math]::Floor($p), $rgb.Count - 2); $f = $p - $a
+            '#' + (-join (0..2 | ForEach-Object { '{0:x2}' -f [int][Math]::Round($rgb[$a][$_] + ($rgb[$a + 1][$_] - $rgb[$a][$_]) * $f) }))
+        })
+}
+function Get-LogoSlot([int]$r, [int]$c, [int]$rows, [int]$cols, [int]$k, [string]$mix) {
+    # que cor ($1..$k) tem a celula (linha r, coluna c) de um logo com rows x cols
+    if ($k -le 1) { return 1 }
+    $f = switch ($mix) {
+        'down' { $r / [Math]::Max(1, $rows - 1) }
+        'across' { $c / [Math]::Max(1, $cols - 1) }
+        'diagonal' { ($r / [Math]::Max(1, $rows - 1) + $c / [Math]::Max(1, $cols - 1)) / 2 }
+        default { if ($k -eq 3) { return Get-RowColor $r $rows }; $r / [Math]::Max(1, $rows - 1) }
+    }
+    [int][Math]::Min($k, [Math]::Floor($f * $k) + 1)
+}
+function Get-ToneSgr([string]$c) { if ($c -match '^#([0-9a-fA-F]{6})$') { $b = [Convert]::FromHexString($Matches[1]); "38;2;$($b[0]);$($b[1]);$($b[2])" } elseif ($AnsiOf[$c]) { $AnsiOf[$c] } else { '37' } }
+function Save-Logo($lines, $colors, [string]$mix = 'bands') {
+    # so o "source" e as cores do logo mudam no config.jsonc (o resto, com os comentarios, fica igual); copia antes.
+    # O config-live.jsonc (fetch ao vivo) leva o mesmo logo
+    $lines = @($lines); $tones = @(Get-LogoTones $colors $mix); $k = $tones.Count
+    $cols = ($lines | Measure-Object Length -Maximum).Maximum
+    $src = (@(for ($i = 0; $i -lt $lines.Count; $i++) {
+                # ($N so onde a cor muda, e nunca num espaco: o "source" fica curto)
+                $row = ''; $last = 0
+                for ($c = 0; $c -lt $lines[$i].Length; $c++) {
+                    $ch = $lines[$i][$c]; $slot = Get-LogoSlot $i $c $lines.Count $cols $k $mix
+                    if ($last -eq 0 -or ($ch -ne ' ' -and $slot -ne $last)) { $row += "`$$slot"; $last = $slot }
+                    $row += $(if ($ch -eq '\') { '\\' } elseif ($ch -eq '"') { '\"' } else { $ch })
+                }
+                if ($last -eq 0) { $row = '$1' }
+                $row
+            }) -join '\n')
+    $map = (@(for ($i = 0; $i -lt $k; $i++) { "`"$($i + 1)`": `"$($tones[$i])`"" }) -join ', ')
+    foreach ($ff in $FfConfig, "$Cfg\fastfetch\config-live.jsonc") {
+        if (-not (Test-Path $ff)) { continue }
+        Copy-Item $ff "$ff.bak-setup" -Force
+        $t = [IO.File]::ReadAllText($ff)
+        $t = [regex]::Replace($t, '("logo"\s*:\s*\{[^}]*?"source"\s*:\s*)"(?:[^"\\]|\\.)*"', { param($m) $m.Groups[1].Value + '"' + $src + '"' })
+        # (so o "color" do logo, o que tem a chave "1"; o do "display" fica)
+        $t = [regex]::new('"color"\s*:\s*\{\s*"1"[^}]*\}').Replace($t, "`"color`": { $map }", 1)
+        [IO.File]::WriteAllText($ff, $t, [Text.UTF8Encoding]::new($false))
+    }
+    @{ colors = @($colors); mix = $mix } | ConvertTo-Json | Set-Content $LogoFile -Encoding utf8
     New-Item "$env:TEMP\superterminal-header-redraw" -Force | Out-Null   # o cabecalho redesenha-se ja
 }
 
@@ -647,7 +710,7 @@ Add-Type -Namespace Su -Name Con -MemberDefinition @'
 [DllImport("kernel32.dll", EntryPoint = "ReadConsoleInputW")] public static extern bool ReadConsoleInput(IntPtr h, [Out] IR[] b, uint n, out uint got);
 '@
 function Edit-Logo {
-    $CW = 60; $CH = 9; $l = Get-Logo; $pal = $l.colors; $brush = 2
+    $CW = 60; $CH = 9; $l = Get-Logo; $pal = $l.colors; $mix = $l.mix; $brush = 2
     $cv = [char[][]]::new($CH); for ($r = 0; $r -lt $CH; $r++) { $cv[$r] = (' ' * $CW).ToCharArray() }
     $load = { param($lines) for ($r = 0; $r -lt $CH; $r++) { $cv[$r] = (' ' * $CW).ToCharArray(); if ($r -lt @($lines).Count) { $s = "$(@($lines)[$r])"; for ($c = 0; $c -lt [Math]::Min($CW, $s.Length); $c++) { $cv[$r][$c] = $s[$c] } } } }
     & $load $l.lines
@@ -662,24 +725,29 @@ function Edit-Logo {
     $draw = {
         $used = @(for ($r = 0; $r -lt $CH; $r++) { if ((-join $cv[$r]).Trim()) { $r } })
         $f = if ($used) { $used[0] } else { 0 }; $n = if ($used) { $used[-1] - $f + 1 } else { 1 }
-        $pn = ($Palettes | Where-Object { $_[1] -eq $pal[0] -and $_[3] -eq $pal[2] } | Select-Object -First 1)
-        $o = "$e[?2026h$e[H`n  $e[1;${Accent}m$([char]0xf03e)  $e[1;97mHeader logo$e[0m`n`n  $e[90mdraw with the mouse (left paints, right erases) or the keys; the colours go top to bottom like in the header$e[0m"
+        $pn = ($Palettes | Where-Object { ($_[1..($_.Count - 1)] -join ' ') -eq ($pal -join ' ') } | Select-Object -First 1)
+        # (as cores como no cabecalho: a largura e a do desenho, sem o espaco a direita)
+        $tones = @(Get-LogoTones $pal $mix); $wide = [Math]::Max(1, (@($cv | ForEach-Object { (-join $_).TrimEnd().Length }) | Measure-Object -Maximum).Maximum)
+        $sgr = @($tones | ForEach-Object { Get-ToneSgr $_ })
+        $o = "$e[?2026h$e[H`n  $e[1;${Accent}m$([char]0xf03e)  $e[1;97mHeader logo$e[0m`n`n  $e[90mdraw with the mouse (left paints, right erases) or the keys; the colours mix like in the header$e[0m"
         $o += "$e[$($top - 1);$($left - 1)H$e[90m$([char]0x256D)" + ([string][char]0x2500 * $CW) + "$([char]0x256E)"
         for ($r = 0; $r -lt $CH; $r++) {
-            $col = $AnsiOf[$pal[(Get-RowColor ($r - $f) $n) - 1]]
             $o += "$e[$($top + $r);$($left - 1)H$e[90m$([char]0x2502)$e[48;2;$($StTheme.dark)m"
             for ($c = 0; $c -lt $CW; $c++) {
                 $cc = $cv[$r][$c]
                 if ($r -eq $cy -and $c -ge $cx -and $c -lt $cx + $brush) { $o += "$e[48;2;$($StTheme.blue);30m$cc$e[0;48;2;$($StTheme.dark)m" }
                 elseif ($cc -eq ' ') { $o += "$e[38;2;55;60;70m$(if ($c % 2 -eq 0 -and $r % 2 -eq 0) { [char]0x00B7 } else { ' ' })" }
-                else { $o += "$e[${col}m$cc" }
+                else { $o += "$e[$($sgr[(Get-LogoSlot ($r - $f) $c $n $wide $tones.Count $mix) - 1])m$cc" }
             }
             $o += "$e[0;90m$([char]0x2502)"
         }
         $o += "$e[$($top + $CH);$($left - 1)H$e[90m$([char]0x2570)" + ([string][char]0x2500 * $CW) + "$([char]0x256F)$e[0m"
         $o += "$e[$($top + $CH + 2);3H$e[2K$(Chips @(@('drag', 'paint'), @('right drag', 'erase'), @('arrows', 'move'), @('space', 'paint / erase'), @('b', "brush $brush wide")))"
-        $o += "$e[$($top + $CH + 4);3H$e[2K$(Chips @(@('t', 'from text'), @('1-4', "colours: $(if ($pn) { $pn[0] } else { 'custom' })"), @('c', 'clear'), @('u', 'undo all'), @('enter', 'save'), @('esc', 'cancel')))"
-        $o += "$e[$($top + $CH + 6);3H$e[2K$(if ($script:Msg) { "$($script:Msg)$e[0m" })"
+        $o += "$e[$($top + $CH + 4);3H$e[2K$(Chips @(@('1-9', "colours: $(if ($pn) { $pn[0] } else { 'your own' })"), @('m', "mix: $($LogoMixes[$mix])"), @('o', 'your own colours')))"
+        # (as paletas, cada uma com as cores dela)
+        $o += "$e[$($top + $CH + 5);3H$e[2K" + (@(for ($i = 0; $i -lt $Palettes.Count; $i++) { $p = $Palettes[$i]; "$e[90m$($i + 1) " + (-join ($p[1..($p.Count - 1)] | ForEach-Object { "$e[$(Get-ToneSgr $_)m$([char]0x2588)" })) + "$e[0m" }) -join '  ')
+        $o += "$e[$($top + $CH + 7);3H$e[2K$(Chips @(@('t', 'from text'), @('c', 'clear'), @('u', 'undo all'), @('enter', 'save'), @('esc', 'cancel')))"
+        $o += "$e[$($top + $CH + 9);3H$e[2K$(if ($script:Msg) { "$($script:Msg)$e[0m" })"
         [Console]::Write("$o$e[?2026l")
     }
     $paint = { param($r, $c, [char]$v) for ($i = 0; $i -lt $brush; $i++) { if ($r -ge 0 -and $r -lt $CH -and $c + $i -ge 0 -and $c + $i -lt $CW) { $cv[$r][$c + $i] = $v } } }
@@ -710,16 +778,34 @@ function Edit-Logo {
                         0x26 { $cy = [Math]::Max(0, $cy - 1) } 0x28 { $cy = [Math]::Min($CH - 1, $cy + 1) }
                         0x20 { & $paint $cy $cx $(if ($cv[$cy][$cx] -eq ' ') { [char]0x2588 } else { ' ' }) }
                         0x1B { if ($env:SUPERTERMINAL_SETUP_DUMP) { @($cv | ForEach-Object { "[" + (-join $_) + "]" }) | Set-Content $env:SUPERTERMINAL_SETUP_DUMP -Encoding utf8 }; return }   # (testes: a tela num ficheiro)
-                        0x0D { $a = & $art; if (-not $a) { $script:Msg = "$e[33mthe logo is empty" } else { Save-Logo $a $pal; return } }
+                        0x0D { $a = & $art; if (-not $a) { $script:Msg = "$e[33mthe logo is empty" } else { Save-Logo $a $pal $mix; return } }
                     }
                     switch -CaseSensitive ("$($ev.Ch)") {
                         'b' { $brush = 3 - $brush; $cx = [Math]::Min($cx, $CW - $brush) }
                         'c' { & $load @() }
-                        'u' { & $load $l.lines; $pal = $l.colors }
-                        { $_ -in '1', '2', '3', '4' } { $pal = $Palettes[[int]$_ - 1][1..3] }
+                        'u' { & $load $l.lines; $pal = $l.colors; $mix = $l.mix }
+                        { $_ -match '^[1-9]$' -and [int]$_ -le $Palettes.Count } {
+                            $p = $Palettes[[int]$_ - 1]; $pal = @($p[1..($p.Count - 1)])
+                            # (uma paleta de degrade em faixas mostra so as 1.as cores: passa logo a degrade)
+                            if ($mix -eq 'bands' -and @($pal | Where-Object { $_ -match '^#' }).Count) { $mix = 'down' }
+                        }
+                        'm' { $ks = @($LogoMixes.Keys); $mix = $ks[([array]::IndexOf($ks, $mix) + 1) % $ks.Count] }
+                        'o' {
+                            [void][Su.Con]::SetConsoleMode($inH, $mode0)
+                            [Console]::Write("$e[$($top + $CH + 9);1H$e[2K"); $txt = "$(Ask 'colours (2 to 6, e.g. #ff0080 #7f00ff #00c6ff):')".Trim()
+                            & $mouseMode
+                            if ($txt) {
+                                $cs = @($txt -split '[\s,]+' | Where-Object { $_ } | ForEach-Object { if ($_ -match '^#?([0-9a-fA-F]{6})$') { "#$($Matches[1].ToLower())" } elseif ($AnsiOf[$_.ToLower()]) { $_.ToLower() } else { "?$_" } })
+                                $badC = @($cs | Where-Object { $_ -like '?*' })
+                                if ($badC) { $script:Msg = "$e[33mnot a colour: $($badC.Substring(1) -join ', ') (use #rrggbb or blue, cyan, magenta, red, yellow, green, white)" }
+                                elseif ($cs.Count -gt 6) { $script:Msg = "$e[33mat most 6 colours" }
+                                else { $pal = $cs; if ($mix -eq 'bands' -and $cs.Count -gt 1) { $mix = 'down' } }
+                            }
+                            Clear-Screen
+                        }
                         't' {
                             [void][Su.Con]::SetConsoleMode($inH, $mode0)
-                            [Console]::Write("$e[$($top + $CH + 6);1H$e[2K"); $txt = "$(Ask 'text:')".Trim()
+                            [Console]::Write("$e[$($top + $CH + 9);1H$e[2K"); $txt = "$(Ask 'text:')".Trim()
                             & $mouseMode
                             if ($txt) {
                                 $a = ConvertTo-BlockArt $txt
@@ -930,6 +1016,102 @@ $SudoPage = if ([Environment]::OSVersion.Version.Build -ge 22000) {
 }
 
 # ---------- ecra principal ----------
+# ---------- 10. prompt ----------
+# o que aparece antes do que se escreve (nome@pc pasta): textos, cores e o que se mostra, em prompt.json; o perfil
+# volta a le-lo quando muda (o prompt deste separador muda logo). Cores por nome = as do tema (seguem o comando theme)
+$PromptFile = "$StCfg\prompt.json"
+$PromptColors = @('magenta', 'blue', 'cyan', 'green', 'yellow', 'red', 'white', 'grey')
+$PromptAnsi = @{ red = '31'; green = '32'; yellow = '33'; blue = '34'; magenta = '35'; cyan = '36'; white = '97'; grey = '90' }
+function Get-PromptCfg {
+    # (o que o prompt de origem mostra; o ficheiro so guarda por cima)
+    $d = [ordered]@{
+        user = @{ show = $true; text = ''; color = 'magenta'; bold = $false }; at = @{ show = $true; text = '@'; color = 'grey'; bold = $false }
+        host = @{ show = $true; text = ''; color = 'blue'; bold = $false }; path = @{ show = $true; style = 'full'; color = 'cyan'; bold = $false }
+        symbol = @{ show = $false; text = [string][char]0x276F; color = 'green'; bold = $true }
+    }
+    if (Test-Path $PromptFile) { try { $j = Get-Content $PromptFile -Raw | ConvertFrom-Json -AsHashtable; foreach ($k in @($d.Keys)) { if ($j[$k]) { foreach ($p in @($j[$k].Keys)) { $d[$k][$p] = $j[$k][$p] } } } } catch {} }
+    $d
+}
+function Get-PromptSgr($seg) {
+    $c = "$($seg.color)"
+    $code = if ($PromptAnsi[$c]) { $PromptAnsi[$c] } elseif ($c -match '^#([0-9a-fA-F]{6})$') { $b = [Convert]::FromHexString($Matches[1]); "38;2;$($b[0]);$($b[1]);$($b[2])" } else { '37' }
+    "$e[0;$(if ($seg.bold) { '1;' })${code}m"
+}
+function Format-PromptPreview($c) {
+    # (como o perfil o desenha, numa pasta de exemplo com git)
+    $s = ''
+    if ($c.user.show) { $s += "$(Get-PromptSgr $c.user)$(if ($c.user.text) { $c.user.text } else { $env:USERNAME })" }
+    if ($c.user.show -and $c.host.show -and $c.at.show) { $s += "$(Get-PromptSgr $c.at)$($c.at.text)" }
+    if ($c.host.show) { $s += "$(Get-PromptSgr $c.host)$(if ($c.host.text) { $c.host.text } else { [Environment]::MachineName.ToLower() })" }
+    if ($c.user.show -or $c.host.show) { $s += ' ' }
+    if ($c.path.show) { $s += "$(Get-PromptSgr $c.path)$(if ($c.path.style -eq 'name') { 'Documents' } else { '~\Documents\' }) " }
+    $s += "$e[0;90mmain$e[33m* "
+    if ($c.symbol.show -and $c.symbol.text) { $s += "$(Get-PromptSgr $c.symbol)$($c.symbol.text) " }
+    "$s$e[0m"
+}
+function Edit-Prompt {
+    $rows = @(@('user', 'Your name', 'empty = your Windows user'), @('at', 'Separator', 'between your name and the PC name'),
+        @('host', 'PC name', 'empty = this PC''s name'), @('path', 'Folder', 'e switches: full path / only the folder name'),
+        @('symbol', 'Symbol at the end', "e changes it: $([char]0x276F)  $  >  $([char]0x03BB)  $([char]0xf061) ..."))
+    $sel = 0; $msg = $null
+    while ($true) {
+        $c = Get-PromptCfg
+        $o = "$e[2J$e[H`n  $e[1;${Accent}m$([char]0xf120)  $e[1;97mPrompt$e[0m`n`n  $e[90mWhat shows before what you type. This tab and new ones change right away.$e[0m`n`n"
+        $o += "  $e[90mpreview$e[0m   $(Format-PromptPreview $c)`n`n"
+        for ($i = 0; $i -lt $rows.Count; $i++) {
+            $r = $rows[$i]; $seg = $c[$r[0]]
+            $box = if ($seg.show) { "$e[32m$([char]0xf14a)" } else { "$e[90m$([char]0xf0c8)" }
+            $val = switch ($r[0]) {
+                'user' { if ($seg.text) { $seg.text } else { "$env:USERNAME (default)" } }
+                'host' { if ($seg.text) { $seg.text } else { "$([Environment]::MachineName.ToLower()) (default)" } }
+                'path' { if ($seg.style -eq 'name') { 'folder name' } else { 'full path' } }
+                default { $seg.text }
+            }
+            $col = "$(Get-PromptSgr $seg)$([char]0x25CF) $($seg.color)$(if ($seg.bold) { ', bold' })$e[0m"
+            $line = "{0,-18}" -f $r[1]; $val = "{0,-24}" -f $val
+            if ($i -eq $sel) { $o += "  $e[${Accent}m$([char]0x258C)$e[0m $box $e[48;2;$($StTheme.sel);1;97m $line $e[0m  $e[97m$val$e[0m  $col`n  $e[${Accent}m$([char]0x258C)$e[0m      $e[90m$($r[2])$e[0m`n" }
+            else { $o += "   $box $e[37m $line $e[0m  $e[90m$val$e[0m  $col`n" }
+        }
+        if ($msg) { $o += "`n  $msg$e[0m`n" }
+        $o += "`n  $(Chips @(@('↑↓', 'choose'), @('←→', 'colour'), @('space', 'on / off'), @('e', 'edit'), @('b', 'bold')))"
+        $o += "`n  $(Chips @(@('c', 'your own colour (#hex)'), @('r', 'back to the default'), @('esc', 'back')))"
+        [Console]::Write($o); $msg = $null
+        $k = [Console]::ReadKey($true); $key = $rows[$sel][0]; $seg = $c[$key]
+        switch ($k.Key) {
+            'UpArrow' { $sel = ($sel - 1 + $rows.Count) % $rows.Count; continue }
+            'DownArrow' { $sel = ($sel + 1) % $rows.Count; continue }
+            'Escape' { return }
+        }
+        $ask = { param($q) [Console]::Write("$e[2J$e[H`n$e[?25h"); try { Ask $q } finally { [Console]::Write("$e[?25l") } }
+        if ($k.Key -in 'LeftArrow', 'RightArrow') {
+            # (uma cor propria (#hex) nao esta na lista: a seta volta a lista)
+            $n = $PromptColors.Count; $i = [array]::IndexOf($PromptColors, "$($seg.color)")
+            $seg.color = $PromptColors[((($i + $(if ($k.Key -eq 'RightArrow') { 1 } else { -1 })) % $n) + $n) % $n]
+        }
+        elseif ($k.KeyChar -eq ' ') { $seg.show = -not $seg.show }
+        elseif ($k.KeyChar -eq 'b') { $seg.bold = -not $seg.bold }
+        elseif ($k.KeyChar -eq 'e') {
+            if ($key -eq 'path') { $seg.style = if ($seg.style -eq 'name') { 'full' } else { 'name' } }
+            else {
+                $t = & $ask $(switch ($key) { 'user' { 'Your name (empty = your Windows user):' } 'host' { 'PC name (empty = this PC''s name):' } 'at' { 'Separator (e.g. @  :  at):' } default { 'Symbol (e.g. > $ λ):' } })
+                if ($null -eq $t) { continue }
+                $t = $t.Trim(); if (-not $t -and $key -in 'at', 'symbol') { $msg = "$e[33mempty: turn it off with space instead"; continue }
+                $seg.text = $t; if ($key -eq 'symbol') { $seg.show = $true }
+            }
+        }
+        elseif ($k.KeyChar -eq 'c') {
+            $t = & $ask 'Colour as #rrggbb (e.g. #ff8800):'
+            if (-not $t) { continue }
+            if ($t.Trim() -notmatch '^#?([0-9a-fA-F]{6})$') { $msg = "$e[33mnot a colour: 6 hex digits, like #ff8800"; continue }
+            $seg.color = "#$($Matches[1].ToLower())"
+        }
+        elseif ($k.KeyChar -eq 'r') { Remove-Item $PromptFile -ErrorAction Ignore; $msg = "$e[32m$([char]0xf00c)  back to the default prompt"; continue }
+        else { continue }
+        $c | ConvertTo-Json -Depth 4 | Set-Content $PromptFile -Encoding utf8
+        $msg = "$e[32m$([char]0xf00c)  saved"
+    }
+}
+
 $Steps = [ordered]@{
     font = @{ icon = [char]0xf031; name = 'Font'; run = { Show-Guide $FontPage }
         check = { $f = Get-ChosenFont; if ($f -and (Test-FontInstalled $f)) { @{ ok = $true; text = $f } } elseif (Test-FontInstalled 'CaskaydiaMono') { @{ ok = $true; text = 'CaskaydiaMono Nerd Font' } } else { @{ ok = $false; text = 'no Nerd Font yet' } } } }
@@ -938,13 +1120,15 @@ $Steps = [ordered]@{
     youtube = @{ icon = [char]0xf16a; name = 'YouTube (yt)'; run = { Show-Guide (New-YtPage) }
         check = { if (Test-Path $YtCookies) { @{ ok = $true; text = 'signed in' } } else { @{ ok = $false; text = 'not signed in (yt asks for it when it opens)' } } } }
     stremio = @{ icon = [char]0xf26c; name = 'Stremio (st)'; run = { Show-StremioSetup }
-        check = { if (Test-Path $StremioAuth) { $m = if (Test-Path "$StCfg\stremio-mode.txt") { if ((Get-Content "$StCfg\stremio-mode.txt") -eq 'rd') { ' · Real-Debrid' } else { ' · without debrid' } }; @{ ok = $true; text = "signed in$m" } } else { @{ ok = $false; text = 'not set up' } } } }
+        check = { if (Test-Path $StremioAuth) { $m = if (Test-Path "$StCfg\stremio-mode.txt") { $db = $Debrids["$(Get-Content "$StCfg\stremio-mode.txt" -TotalCount 1)".Trim()]; if ($db) { " · $($db.name)" } else { ' · without debrid' } }; @{ ok = $true; text = "signed in$m" } } else { @{ ok = $false; text = 'not set up' } } } }
     logo = @{ icon = [char]0xf03e; name = 'Header logo'; run = { Edit-Logo }
-        check = { $l = Get-Logo; if ($l.lines.Count) { @{ ok = $true; text = "$($l.lines.Count) lines · $($l.colors -join ' / ')" } } else { @{ ok = $false; text = 'no logo' } } } }
+        check = { $l = Get-Logo; if ($l.lines.Count) { @{ ok = $true; text = "$($l.lines.Count) lines · $($l.colors -join ' / ')$(if ($l.mix -ne 'bands') { " · $($l.mix)" })" } } else { @{ ok = $false; text = 'no logo' } } } }
     wsl = @{ icon = [char]0xe712; name = 'WSL (Linux)'; run = { Show-Guide $WslPage }
         check = { $d = Get-Distro; if (-not $d) { @{ ok = $false; text = 'not installed (optional)' } } elseif ("$(Invoke-Wsl 'grep -q kvn.zshrc ~/.zshrc && echo y')".Trim() -eq 'y') { @{ ok = $true; text = $d } } else { @{ ok = $false; text = "$d · not linked yet" } } } }
     widgets = @{ icon = [char]0xf009; name = 'Header widgets'; run = { Edit-Widgets }
         check = { $on = @((Get-Widgets).enabled); @{ ok = $true; text = $(if ($on) { $on -join ', ' } else { 'none (optional)' }) } } }
+    prompt = @{ icon = [char]0xf120; name = 'Prompt'; run = { Edit-Prompt }
+        check = { @{ ok = $true; text = $(if (Test-Path $PromptFile) { 'your own' } else { 'default' }) } } }
     shortcuts = @{ icon = [char]0xf11c; name = 'Shortcuts'; run = { Edit-Keys }
         check = { $n = (Get-Keys).Count; @{ ok = $true; text = $(if ($n) { "$n changed" } else { 'defaults' }) } } }
     sudo = @{ icon = [char]0xf132; name = 'sudo'; run = { Show-Guide $SudoPage }

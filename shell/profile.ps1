@@ -4,6 +4,8 @@ if (-not $env:KVN_CMD -and [Environment]::GetCommandLineArgs() -match '^-(c|comm
 # So dentro do SuperTerminal: o WezTerm marca as sessoes dele com SUPERTERMINAL=1 (passa tambem para o WSL e para o
 # ssh de um PC para o outro). Fora dele (VS Code, Windows Terminal, pwsh solto) o PowerShell fica como de origem
 if (-not $env:SUPERTERMINAL -and -not $env:KVN_CMD) { return }
+# quanto o perfil demora a carregar (o super doctor mostra-o) e os ficheiros de config que nao se leram
+$global:StLoadSw = [Diagnostics.Stopwatch]::StartNew(); $global:StConfigErrors = @()
 # um "wsl" daqui tambem e SuperTerminal (zsh, prompt, Ctrl+W): o WezTerm ja o diz ao WSL dele, mas numa sessao ssh
 # ninguem o fazia; o SSH_CONNECTION vai junto (o prompt do zsh mostra "ssh")
 if ($env:SUPERTERMINAL) { $wl = @("$env:WSLENV" -split ':' | Where-Object { $_ }); $env:WSLENV = (@($wl) + @('SUPERTERMINAL', 'KVN_COMPACT', 'SSH_CONNECTION' | Where-Object { $_ -notin @($wl -replace '/.*') })) -join ':' }
@@ -31,9 +33,11 @@ $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 #   name = o do ssh (ssh desktop), host = o nome no Tailscale, shell = o do ssh de la (pwsh / cmd), ip = o do Tailscale
 #   (o prompt mostra o PC nas pastas de rede \\<ip>\...), mac = para o wake. Nada disto fica no codigo
 $PcsFile = "$HOME\.config\superterminal\pcs.json"
-$Pcs = @(if (Test-Path $PcsFile) { try { Get-Content $PcsFile -Raw | ConvertFrom-Json } catch {} })
+$Pcs = @(if (Test-Path $PcsFile) { try { Get-Content $PcsFile -Raw | ConvertFrom-Json -ErrorAction Stop } catch { $global:StConfigErrors += "${PcsFile}: $($_.Exception.Message)" } })
 $NetHostNames = @{}; foreach ($pc in $Pcs) { if ($pc.ip) { $NetHostNames[$pc.ip] = $pc.host } }
 $PwshExe = 'C:\Program Files\PowerShell\7\pwsh.exe'   # (pwsh 7 MSI nos dois PCs; usado para lancar processos escondidos)
+# (noutro sitio - Store, scoop, outra pasta - usa o pwsh que esta a correr este perfil)
+if (-not [IO.File]::Exists($PwshExe)) { $PwshExe = (Get-Process -Id $PID).Path }
 # tema (comando theme): ~\.config\superterminal\theme.json = a paleta escolhida; o WezTerm, yt, st, setup e F1 leem-na.
 # Aqui: fzf (Ctrl+R, F1, k, fetch, app...) e bat (cat, view, fetch). Sem ficheiro: One Dark
 $ThemeFile = "$HOME\.config\superterminal\theme.json"
@@ -41,7 +45,7 @@ function Set-ThemeEnv($t) {
     $env:FZF_DEFAULT_OPTS = "--color=fg:$($t.fg),bg:-1,hl:$($t.blue),fg+:$($t.white),bg+:$($t.sel),hl+:$($t.blue),info:$($t.green),prompt:$($t.cyan),pointer:$($t.red),marker:$($t.yellow),spinner:$($t.magenta),header:$($t.comment),border:$($t.line),gutter:-1,query:$($t.fg)"
     $env:BAT_THEME = $t.bat
 }
-$Theme = if (Test-Path $ThemeFile) { try { Get-Content $ThemeFile -Raw | ConvertFrom-Json } catch {} }
+$Theme = if (Test-Path $ThemeFile) { try { Get-Content $ThemeFile -Raw | ConvertFrom-Json -ErrorAction Stop } catch { $global:StConfigErrors += "${ThemeFile}: $($_.Exception.Message)" } }
 if ($Theme) { Set-ThemeEnv $Theme } else {
     $env:FZF_DEFAULT_OPTS = '--color=fg:#abb2bf,bg:-1,hl:#61afef,fg+:#ffffff,bg+:#3e4451,hl+:#61afef,info:#98c379,prompt:#56b6c2,pointer:#e06c75,marker:#e5c07b,spinner:#c678dd,header:#5c6370,border:#4b5263,gutter:-1,query:#abb2bf'
     $env:BAT_THEME = 'OneHalfDark'
@@ -54,7 +58,26 @@ function nano { micro @args }
 if ([Environment]::OSVersion.Version.Build -lt 22000 -and (Test-Path "$env:ProgramFiles\gsudo\Current\gsudo.exe")) { Set-Alias sudo "$env:ProgramFiles\gsudo\Current\gsudo.exe" }
 # language servers do helix (hx): ao FIM do PATH, para o python.exe do venv do pylsp nao passar a frente do Python normal
 $env:PATH += ";$HOME\.local\pylsp\Scripts;$HOME\.local\clangd\bin"
+# programas sem pacote no winget (numbat, ouch: o instalador tira-os do GitHub para aqui)
+$env:PATH += ";$HOME\.local\bin"
 $script:LastHistId = 0
+# o aspeto do prompt (setup > Prompt): ~\.config\superterminal\prompt.json = { user, at, host, path, symbol }, cada um com
+# show / text / color (nome do tema ou #rrggbb) / bold. Sem ficheiro: o de origem. Volta a ler-se quando o ficheiro muda
+$PromptFile = "$HOME\.config\superterminal\prompt.json"; $script:PromptLookT = -1; $script:PromptLook = $null
+$PromptAnsi = @{ red = '31'; green = '32'; yellow = '33'; blue = '34'; magenta = '35'; cyan = '36'; white = '97'; grey = '90' }
+function Get-PromptLook {
+    $t = if ([IO.File]::Exists($PromptFile)) { [IO.File]::GetLastWriteTimeUtc($PromptFile).Ticks } else { 0 }
+    if ($t -ne $script:PromptLookT) {
+        $script:PromptLookT = $t
+        $script:PromptLook = if ($t) { try { [IO.File]::ReadAllText($PromptFile) | ConvertFrom-Json -ErrorAction Stop } catch { $null } }
+    }
+    $script:PromptLook
+}
+function Get-PromptSgr($seg, [string]$def) {
+    $c = "$($seg.color)"
+    $code = if ($PromptAnsi[$c]) { $PromptAnsi[$c] } elseif ($c -match '^#([0-9a-fA-F]{6})$') { $b = [Convert]::FromHexString($Matches[1]); "38;2;$($b[0]);$($b[1]);$($b[2])" } else { $def }
+    "$([char]27)[0;$(if ($seg.bold) { '1;' })${code}m"
+}
 function prompt {
     # resultado do ultimo comando: $? tem de ser lido na 1.a linha (por isso o zoxide ja nao envolve este prompt: a rotina
     # dele e chamada no fim). Codigo de saida reposto a 0 para nao ficar "preso" ao comando seguinte.
@@ -69,7 +92,15 @@ function prompt {
         [Console]::Write("$e]1337;SetUserVar=cwd=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($here)))$([char]7)")
     }
     if ($env:SSH_CONNECTION) { $s += "$e[1;32m`u{f489} ssh " }
-    $s += "$e[0;35m$env:USERNAME$e[90m@$e[34m$PromptHost "
+    $pl = Get-PromptLook
+    if (-not $pl) { $s += "$e[0;35m$env:USERNAME$e[90m@$e[34m$PromptHost " }
+    else {
+        $su = $pl.user.show -ne $false; $sh = $pl.host.show -ne $false
+        if ($su) { $s += "$(Get-PromptSgr $pl.user '35')$(if ($pl.user.text) { $pl.user.text } else { $env:USERNAME })" }
+        if ($su -and $sh -and $pl.at.show -ne $false) { $s += "$(Get-PromptSgr $pl.at '90')$(if ($pl.at.text) { $pl.at.text } else { '@' })" }
+        if ($sh) { $s += "$(Get-PromptSgr $pl.host '34')$(if ($pl.host.text) { $pl.host.text } else { $PromptHost })" }
+        if ($su -or $sh) { $s += ' ' }
+    }
     # pasta de rede (drive mapeada ou \\servidor\...)
     $unc = if ($PWD.Drive.DisplayRoot) { $PWD.Drive.DisplayRoot } elseif ($PWD.ProviderPath -like '\\*') { $PWD.ProviderPath }
     if ($unc) { $srv = ($unc -split '\\')[2]; $s += "$e[1;33m`u{f233} $(if ($NetHostNames[$srv]) { $NetHostNames[$srv] } else { $srv }) " }
@@ -79,7 +110,12 @@ function prompt {
     # pastas acabam em "\" (C:\x\y\, ~\Documents\); a home fica so "~"
     $shown = if ($p -eq $HOME) { '~' } elseif ($p.StartsWith("$HOME\")) { '~' + $p.Substring($HOME.Length) } else { $p }
     if ($shown -ne '~' -and -not $shown.EndsWith('\')) { $shown += '\' }
-    $s += "$e[0;36m$shown "
+    if (-not $pl) { $s += "$e[0;36m$shown " }
+    elseif ($pl.path.show -ne $false) {
+        # (so o nome da pasta: ~ e as raizes, C:\, ficam como estao)
+        $leaf = Split-Path $shown.TrimEnd('\') -Leaf
+        $s += "$(Get-PromptSgr $pl.path '36')$(if ($pl.path.style -eq 'name' -and $leaf -and $shown -ne '~' -and $shown -notmatch '^[A-Za-z]:\\$') { $leaf } else { $shown }) "
+    }
     # git: branch, * = alteracoes por gravar, ↑n/↓n = commits por enviar/receber (so dentro de um repositorio)
     for ($d = $p; $d; $d = Split-Path $d) {
         if (Test-Path -LiteralPath "$d\.git") {
@@ -105,6 +141,7 @@ function prompt {
         # comando demorado (>= 30 s) acabou com a janela do terminal noutro plano: notificacao do Windows
         if ($t.TotalSeconds -ge 30) { Send-DoneToast $last.CommandLine $t (-not $failed) }
     }
+    if ($pl.symbol.show -and $pl.symbol.text) { $s += "$(Get-PromptSgr $pl.symbol '32')$($pl.symbol.text) " }
     if (Test-Path Function:__zoxide_hook) { $null = __zoxide_hook }   # (o z aprende a pasta, ver zoxide abaixo)
     $global:LASTEXITCODE = 0   # (o git status deste prompt nao pode contar como o resultado do proximo comando)
     # pasta deste separador, para o reabrir depois de reiniciar (ver "separadores" abaixo); so quando muda
@@ -1264,11 +1301,12 @@ function cls { ff }
 $DotGit = "$HOME\.dotfiles"; $SyncFlag = "$HOME\.config\sync-problem.txt"
 function dot { git -C $HOME --git-dir=$DotGit --work-tree=$HOME @args }   # (-C: os caminhos sao sempre relativos a home, seja qual for a pasta atual)
 $StRepo = "$HOME\.local\superterminal\repo"
-$StRepoUrl = 'https://github.com/kevgoncalves/SuperTerminal.git'   # ponytail: o repo do Kev; com a config por pessoa (fase 1) passa a vir de la
+$StRepoUrl = 'https://github.com/guivxavier/super-terminal-edit.git'   # o repo do Gui (feito a partir do do Kev: github.com/kevgoncalves/SuperTerminal)
 # fetch do GitHub. A copia de um PC que so recebeu versoes por "super sync" nasceu de um git init, sem origin: junta-o
 function Invoke-StFetch {
-    git -C $StRepo remote get-url origin 2>&1 | Out-Null
+    $cur = "$(git -C $StRepo remote get-url origin 2>$null)".Trim()
     if ($LASTEXITCODE) { git -C $StRepo remote add origin $StRepoUrl 2>&1 | Out-Null }
+    elseif ($cur -ne $StRepoUrl) { git -C $StRepo remote set-url origin $StRepoUrl 2>&1 | Out-Null }   # (o repo mudou: a copia de um PC antigo ainda apontava para o outro)
     git -C $StRepo fetch -q origin 2>&1 | Out-Null
     $LASTEXITCODE -eq 0
 }
@@ -1346,24 +1384,102 @@ function Sync-Pcs {
         & $say "  `e[1m${pc}:`e[0m $(if ($r) { "$($r[0])".Trim() } else { "`e[31mno answer" })`e[0m"
     }
 }
+function Show-Doctor {
+    # o que falta ou esta mal neste PC, com o que fazer; so le, nao muda nada
+    $ok = { param($t) Write-Host "  `e[32m$([char]0x2713)`e[0m $t" }
+    $bad = { param($t, $hint, [switch]$Soft) Write-Host "  $(if ($Soft) { "`e[33m!" } else { "`e[31m$([char]0x2717)" })`e[0m `e[97m$t`e[0m"; if ($hint) { Write-Host "    `e[90m$hint`e[0m" } }
+    $sec = { param($t) Write-Host "`n  `e[1;36m$t`e[0m" }
+    $nBad = 0
+    & $sec 'Shell'
+    & $ok "PowerShell $($PSVersionTable.PSVersion) `e[90m($PwshExe)"
+    if ($PwshExe -ne 'C:\Program Files\PowerShell\7\pwsh.exe') { & $bad 'PowerShell 7 is not the MSI build' 'ssh between PCs and the hidden tasks expect it: winget install Microsoft.PowerShell --installer-type wix' -Soft }
+    $ms = $global:StLoadMs
+    if ($ms -lt 400) { & $ok "profile loads in $ms ms" } else { & $bad "profile takes $ms ms to load" 'a new tab waits this long; Tailscale, WSL or a slow disk are the usual reasons' -Soft }
+    & $sec 'Programs'
+    # (comando, pacote do winget)
+    $tools = [ordered]@{ git = 'Git.Git'; fastfetch = 'Fastfetch-cli.Fastfetch'; fzf = 'junegunn.fzf'; zoxide = 'ajeetdsouza.zoxide'; bat = 'sharkdp.bat'; rg = 'BurntSushi.ripgrep.MSVC'; fd = 'sharkdp.fd'; eza = 'eza-community.eza'
+        micro = 'zyedidia.micro'; hx = 'Helix.Helix'; lazygit = 'JesseDuffield.lazygit'; delta = 'dandavison.delta'; yazi = 'sxyazi.yazi'; glow = 'charmbracelet.glow'; mpv = 'shinchiro.mpv'; 'yt-dlp' = 'yt-dlp.yt-dlp'; chafa = 'hpjansson.Chafa'; jq = 'jqlang.jq' }
+    # (o mpv do winget fica fora do PATH: o yt e o st procuram-no tambem nestas pastas)
+    $also = @{ mpv = 'C:\Program Files\MPV Player\mpv.exe', "$HOME\.local\mpv\mpv.exe" }
+    $missing = @($tools.Keys | Where-Object { -not (Get-Command "$_.exe" -CommandType Application -ErrorAction Ignore) -and -not @($also[$_] | Where-Object { $_ -and (Test-Path $_) }).Count })
+    if (-not $missing) { & $ok "all $($tools.Count) programs found" }
+    else { $nBad++; & $bad "missing: $($missing -join ', ')" "winget install -e --id $(($missing | ForEach-Object { $tools[$_] }) -join ' ; winget install -e --id ')" }
+    # extras: fazem falta so ao comando de cada um (aviso, nao conta como problema)
+    $extras = [ordered]@{ topgrade = 'topgrade-rs.topgrade'; spotify_player = 'aome510.spotify-player'; rclone = 'Rclone.Rclone'; gping = 'orf.gping'; speedtest = 'Ookla.Speedtest.CLI'
+        trip = 'FujiApple.Trippy'; croc = 'schollz.croc'; xh = 'ducaale.xh'; pastel = 'sharkdp.pastel'; gh = 'GitHub.cli'; hyperfine = 'sharkdp.hyperfine'; numbat = ''; ouch = '' }
+    $exMissing = @($extras.Keys | Where-Object { -not (Get-Command "$_.exe" -CommandType Application -ErrorAction Ignore) })
+    if (-not $exMissing) { & $ok "all $($extras.Count) extras found" }
+    else { & $bad "extras missing: $($exMissing -join ', ')" "run install.ps1 again (it adds only what is missing)$(if (@($exMissing | Where-Object { $extras[$_] }).Count) { ", or: winget install -e --id $(($exMissing | Where-Object { $extras[$_] } | ForEach-Object { $extras[$_] }) -join ' ; winget install -e --id ')" })" -Soft }
+    if ($UuDir) { & $ok 'Linux commands (uutils)' } else { $nBad++; & $bad 'Linux commands (uutils) not found' 'rm / cp / mv are the PowerShell ones; run install.ps1 again' }
+    $wz = "$HOME\.local\wezterm\wezterm-gui.exe"
+    if (Test-Path $wz) { & $ok "WezTerm $((Get-Item $wz).VersionInfo.ProductVersion)" } else { $nBad++; & $bad 'WezTerm is not in ~\.local\wezterm' 'run install.ps1 again' }
+    $font = "$(Get-Content "$HOME\.config\superterminal\font.txt" -TotalCount 1 -ErrorAction Ignore)".Trim(); if (-not $font) { $font = 'CaskaydiaMono' }
+    $fonts = foreach ($k in 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts', 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Fonts') { (Get-ItemProperty $k -ErrorAction Ignore).PSObject.Properties.Name }
+    if (@($fonts | Where-Object { $_ -like "$($font -replace ' Nerd Font.*' -replace ' NF.*')*" }).Count) { & $ok "font: $font" } else { $nBad++; & $bad "font $font is not installed" 'icons show as boxes: setup font' }
+    & $sec 'Config  ~\.config\superterminal'
+    foreach ($m in $global:StConfigErrors) { $nBad++; & $bad "can't read $m" 'fix the JSON or delete the file (setup writes it again)' }
+    foreach ($p in $PcsFile, $ThemeFile, "$HOME\.config\superterminal\keys.json", $AppsFile) {
+        if (-not (Test-Path $p)) { continue }
+        if ($global:StConfigErrors -match [regex]::Escape($p)) { continue }
+        $f = Split-Path $p -Leaf
+        try { $null = Get-Content $p -Raw | ConvertFrom-Json -ErrorAction Stop; & $ok $f } catch { $nBad++; & $bad "$f is not valid JSON" $_.Exception.Message }
+    }
+    $mode = "$(Get-Content "$HOME\.config\superterminal\stremio-mode.txt" -TotalCount 1 -ErrorAction Ignore)".Trim()
+    if (Test-Path "$HOME\.config\superterminal\setup-seen") { & $ok "setup done$(if ($mode) { " · stremio: $mode" })" } else { & $bad 'setup not done yet' 'run setup' -Soft }
+    & $sec 'PCs'
+    $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+    if (-not (Test-Path $ts)) { & $bad 'Tailscale is not installed' 'only needed for ssh / get / send between PCs: setup tailscale' -Soft }
+    else {
+        $st = try { & $ts status --json 2>$null | ConvertFrom-Json } catch { $null }
+        if ($st.BackendState -eq 'Running') { & $ok "Tailscale: $($st.Self.HostName.ToLower())" }
+        else {
+            # (sem outros PCs com nome o Tailscale nao faz falta: so um aviso)
+            $why = "Tailscale: $(if ($st) { "$($st.BackendState)".Replace('NoState', 'not signed in').Replace('NeedsLogin', 'not signed in') } else { 'not answering' })"
+            if ($Pcs) { $nBad++; & $bad $why 'sign in: setup tailscale' } else { & $bad $why 'only needed for ssh / get / send between PCs: setup tailscale' -Soft }
+        }
+    }
+    $sshd = Get-Service sshd -ErrorAction Ignore
+    if ($sshd.Status -eq 'Running') { & $ok 'SSH server on this PC' } elseif ($Pcs.Count -gt 1) { & $bad 'SSH server is off on this PC' 'the other PCs cannot reach this one: setup tailscale (step SSH server)' -Soft }
+    foreach ($pc in @($SshHosts.Keys | Where-Object { $SshHosts[$_] -ne $env:COMPUTERNAME })) {
+        if (Test-Port22 $SshHosts[$pc] 1500) { & $ok "$pc reachable" } else { & $bad "$pc not reachable" 'off, asleep (wake) or offline' -Soft }
+    }
+    if (-not $Pcs) { Write-Host "  `e[90m$([char]0x25CB) no other PCs named (setup tailscale)`e[0m" }
+    & $sec 'Version'
+    if (Get-Command gh.exe -ErrorAction Ignore) { gh auth status *> $null; if ($LASTEXITCODE) { & $bad 'GitHub (gh): not signed in' 'gh auth login' -Soft } else { & $ok 'GitHub (gh) signed in' } }
+    $ap = Get-StApplied
+    if ($ap) { & $ok "applied $($ap.Substring(0, 7))  `e[90m(super status compares with GitHub)" } else { Write-Host "  `e[90m$([char]0x25CB) installed from a zip: super upgrade keeps it up to date`e[0m" }
+    Write-Host ''
+    if ($nBad) { Write-Host "  `e[31m$nBad to fix`e[0m`n" } else { Write-Host "  `e[32meverything looks fine`e[0m`n" }
+}
 function super {
     # super upgrade -> a versao mais recente do GitHub, aplicada neste PC
     # super sync    -> a versao deste PC para os outros PCs (setup > Tailscale da-lhes nome)
     # super status  -> este PC e os outros comparados com o GitHub (nao muda nada)
-    param([Parameter(Position = 0)][string]$Cmd)
+    # super doctor  -> o que falta ou esta mal neste PC (nao muda nada)
+    # super upgrade --all -> o SuperTerminal e depois todos os programas (topgrade: winget, pip, ... ; pergunta antes)
+    param([Parameter(Position = 0)][string]$Cmd, [switch]$All, [Parameter(ValueFromRemainingArguments)][string[]]$Rest)
+    if ($Rest -contains '--all') { $All = $true }
     switch ($Cmd) {
-        'upgrade' { [void](Update-SuperTerminal) }
+        'upgrade' {
+            [void](Update-SuperTerminal)
+            if ($All) {
+                if (Get-Command topgrade -ErrorAction Ignore) { Write-Host "`n  `e[90mnow every program (topgrade):`e[0m"; topgrade }
+                else { Write-Warn 'topgrade is not installed' 'winget install -e --id topgrade-rs.topgrade' }
+            }
+        }
         'sync' { Sync-Pcs }
         'status' { Show-SyncStatus }
+        'doctor' { Show-Doctor }
         default {
             $c = { param($k, $t) "  `e[48;2;62;68;81;97m super $k `e[0m  `e[37m$t`e[0m" }
-            Write-Host (& $c 'upgrade' 'the latest version from GitHub, on this PC')
+            Write-Host (& $c 'upgrade' 'the latest version from GitHub, on this PC (--all: and every program)')
             Write-Host (& $c 'sync   ' 'this PC''s version to your other PCs')
             Write-Host (& $c 'status ' 'this PC and the others compared with GitHub')
+            Write-Host (& $c 'doctor ' 'what is missing or wrong on this PC')
         }
     }
 }
-Register-ArgumentCompleter -CommandName super -ParameterName Cmd -ScriptBlock { param($c, $p, $w) 'upgrade', 'sync', 'status' | Where-Object { $_ -like "$w*" } | ForEach-Object { [Management.Automation.CompletionResult]::new($_) } }
+Register-ArgumentCompleter -CommandName super -ParameterName Cmd -ScriptBlock { param($c, $p, $w) 'upgrade', 'sync', 'status', 'doctor' | Where-Object { $_ -like "$w*" } | ForEach-Object { [Management.Automation.CompletionResult]::new($_) } }
 function sync { Write-Host "  `e[90msync is now: super upgrade (this PC from GitHub) / super sync (to your other PCs) / super status`e[0m" }
 
 $WakeMacs = @{}; foreach ($pc in $Pcs) { if ($pc.mac) { $WakeMacs[$pc.name] = $pc.mac } }
@@ -1451,6 +1567,60 @@ function st { if (Open-InTab 'st' (@($PwshExe, '-NoLogo', '-File', "$HOME\.confi
 # ---- setup: contas e escolhas (fonte, Tailscale, YouTube, Stremio, logo, sudo) -> ~\.config\superterminal-setup.ps1 ----
 function setup { Clear-FfRegion; $a = $args; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\superterminal-setup.ps1" @a } }
 function monitor {Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile -File "$HOME\.config\st-monitor.ps1" } }   # CPU, GPU, RAM, temperatura e processos dos teus PCs
+
+# ---- extras (o instalador poe-os; o super doctor diz quais faltam) ----
+# spotify: o Spotify no terminal (spotify_player; precisa de Premium; a 1.a vez abre o browser para entrar)
+function spotify { if (Open-InTab 'spotify' (@('spotify_player') + $args)) { return }; Clear-FfRegion; $a = $args; Invoke-Zoomed { spotify_player @a } }
+# calc: calculadora com unidades (numbat): "calc 1920 * 1080", "calc '5 GB / (20 MB/s) to min'" (com parenteses, entre
+# aspas: senao o PowerShell corre o que esta dentro); sem nada, interativa
+function calc { if ($args) { numbat -e ($args -join ' ') } else { numbat } }
+# speedtest: o da Ookla, com a licenca ja aceite (sem isto pergunta a cada vez num PC novo)
+function speedtest { speedtest.exe --accept-license --accept-gdpr @args }
+# trip: traceroute ao vivo (trippy); precisa de admin no Windows: vai pelo sudo
+function trip {
+    if ($IsAdmin) { trip.exe @args; return }
+    if (-not (Get-Command sudo -ErrorAction Ignore)) { Write-Warn 'trip needs admin' 'turn on sudo (setup sudo) or open the terminal as admin'; return }
+    sudo trip.exe @args
+}
+# pcping: ping com grafico aos teus PCs (nomes do Tailscale) e a internet (1.1.1.1), lado a lado; pcping <host> = outro
+function pcping {
+    $h = if ($args) { $args } else { @(@($SshHosts.Keys | Where-Object { $SshHosts[$_] -ne $env:COMPUTERNAME } | ForEach-Object { $SshHosts[$_] }) + '1.1.1.1') }
+    Clear-FfRegion; Invoke-Zoomed { gping @h }
+}
+# share / receive: ficheiros com qualquer pessoa (croc): share da um codigo, a outra pessoa faz receive <codigo>.
+# (para os teus PCs ha get / send, pelo Tailscale)
+function share { if (-not $args) { Write-Warn 'share what?' 'share <file or folder...>'; return }; croc send @args }
+function receive { if (-not $args) { Write-Warn 'receive needs the code' 'receive <code>  (the one share showed on the other side)'; return }; Push-Location (Get-DownloadsDir); try { croc @args } finally { Pop-Location } }
+# cloud: Google Drive, OneDrive, Dropbox... (rclone). A 1.a vez configura uma (rclone config, com o browser para entrar)
+#   cloud               -> as tuas nuvens e o espaco usado
+#   cloud ls [pasta]    -> lista uma pasta (da 1.a nuvem; outra: <nome>:pasta)
+#   cloud up <ficheiro...>  -> envia para a pasta SuperTerminal da nuvem       cloud get <ficheiro>  -> traz para Transferencias
+#   cloud add           -> mais uma nuvem
+function cloud {
+    param([Parameter(Position = 0)][string]$Cmd, [Parameter(Position = 1, ValueFromRemainingArguments)][string[]]$Rest)
+    if (-not (Get-Command rclone -ErrorAction Ignore)) { Write-Warn 'rclone is not installed' 'winget install -e --id Rclone.Rclone'; return }
+    $rem = @(rclone listremotes 2>$null | ForEach-Object { "$_".Trim().TrimEnd(':') } | Where-Object { $_ })
+    if (-not $rem -or $Cmd -eq 'add') {
+        Write-Host "  `e[90mrclone asks a few questions: n (new), a name (e.g. drive), the type (drive = Google Drive, onedrive, dropbox...),`n  then enter for the defaults; the browser opens for you to sign in. q leaves.`e[0m"
+        rclone config; return
+    }
+    $r = "$($rem[0]):"
+    $at = { param($p) if ("$p" -match '^[^\\/:]+:') { "$p" } else { "$r$p" } }   # (pasta da 1.a nuvem, ou <nome>:pasta)
+    switch ($Cmd) {
+        'ls' { rclone lsf --dirs-first --format 'sp' --separator '  ' (& $at "$($Rest | Select-Object -First 1)") }
+        'up' { if (-not $Rest) { Write-Warn 'cloud up <file...>'; return }; foreach ($f in $Rest) { rclone copy -P $f "${r}SuperTerminal" }; Write-Host "  `e[32m$([char]0x2713)`e[0m in ${r}SuperTerminal" }
+        'get' { if (-not $Rest) { Write-Warn 'cloud get <file>'; return }; $dl = Get-DownloadsDir; foreach ($f in $Rest) { rclone copy -P (& $at $f) $dl }; Write-Host "  `e[32m$([char]0x2713)`e[0m in $dl" }
+        default {
+            foreach ($x in $rem) {
+                $ab = try { rclone about "${x}:" --json 2>$null | ConvertFrom-Json } catch { $null }
+                $sp = if ($ab.total) { "$(Format-Size $ab.used) of $(Format-Size $ab.total)" } elseif ($ab.used) { "$(Format-Size $ab.used) used" } else { '' }
+                Write-Host "  `e[36m$([char]0xf0c2)`e[0m `e[97m$x`e[0m  `e[90m$sp`e[0m"
+            }
+            Write-Host "  `e[90mcloud ls [folder] / cloud up <file> / cloud get <file> / cloud add`e[0m"
+        }
+    }
+}
+Register-ArgumentCompleter -CommandName cloud -ParameterName Cmd -ScriptBlock { param($c, $p, $w) 'ls', 'up', 'get', 'add' | Where-Object { $_ -like "$w*" } | ForEach-Object { [Management.Automation.CompletionResult]::new($_) } }
 Register-ArgumentCompleter -CommandName setup -ScriptBlock { param($c, $p, $w) 'font', 'tailscale', 'youtube', 'stremio', 'logo', 'wsl', 'shortcuts', 'widgets', 'sudo' | Where-Object { $_ -like "$w*" } }
 # ---- app: lancador de apps ----
 #   app            -> escolher com fzf        app <nome>      -> abrir
@@ -1691,6 +1861,7 @@ function wsl {
     $nonInteractive = '-e', '--exec', '--', '-l', '--list', '-v', '--version', '--status', '--shutdown', '-t', '--terminate', '--update', '--install', '-s', '--set-default', '--unregister', '--export', '--import', '--mount', '--unmount', '--help'
     if (-not ($args | Where-Object { $_ -in $nonInteractive })) { ff }
 }
+$global:StLoadMs = $global:StLoadSw.ElapsedMilliseconds   # (antes do setup e do pin, que esperam pelo utilizador)
 
 # 1.a vez que o terminal abre (num PC novo): o setup aparece sozinho (ele grava ~\.config\superterminal\setup-seen)
 if (-not $env:KVN_CMD -and -not $env:SSH_CONNECTION -and -not [Console]::IsOutputRedirected -and -not (Test-Path "$HOME\.config\superterminal\setup-seen")) { setup }

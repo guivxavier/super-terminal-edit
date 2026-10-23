@@ -4,12 +4,14 @@ A complete terminal environment for Windows: PowerShell 7 + Windows Terminal, wi
 
 > **State:** phase 1 in progress. See [ROADMAP.md](ROADMAP.md).
 
+> Based on [kevgoncalves/SuperTerminal](https://github.com/kevgoncalves/SuperTerminal), with extras: TorBox in `st`, `setup prompt` (your own prompt text and colours), colour gradients for the header logo, `super doctor`, more programs (`spotify`, `cloud`, `calc`, `share`, `pcping`, `speedtest`, `trip`, `ouch`, `xh`, `pastel`, `gh`, `hyperfine`, `super upgrade --all`), SSH firewall limited to Tailscale and the local network, and `tests/run.ps1` on every push.
+
 ## Install
 
 In PowerShell, on a clean Windows 10 / 11 (nothing needed beforehand, not even git):
 
 ```powershell
-irm https://raw.githubusercontent.com/kevgoncalves/SuperTerminal/main/get.ps1 | iex
+irm https://raw.githubusercontent.com/guivxavier/super-terminal-edit/main/get.ps1 | iex
 ```
 
 Or by hand:

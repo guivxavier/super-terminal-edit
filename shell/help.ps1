@@ -8,13 +8,17 @@ $KvnHelp = @(
         use = @(@('yt', 'home feed (asks you to sign in the first time)'), @('yt <search>', 'search YouTube'), @('yt -a <search>', 'audio only (music): plays the results one after another'))
         kb = @(@('arrows', 'move in the grid'), @('enter', 'play the selected video'), @('1 2 3 4', 'home / subscriptions / watch later / history'), @('/  s  ctrl+f', 'search'), @('r', 'reload'), @('l', 'sign in again'), @('?', 'all shortcuts'), @('esc  q', 'back / quit'))
         notes = @('while a video plays: space pause, arrows seek 5 s, f fullscreen, m mute, 9 0 volume, up/down pick in "up next"', 'click the video to pause; at the end: enter next, r watch again, c cancel autoplay', 'takes the whole window while it is open') }
-    @{ g = 'media'; c = 'st'; s = 'movies and series (Stremio addons + Real-Debrid)'; ins = 'st '
+    @{ g = 'media'; c = 'st'; s = 'movies and series (Stremio addons + Real-Debrid or TorBox)'; ins = 'st '
         use = @(@('st', 'explore: trending movies'), @('st <search>', 'search movies and series'))
         kb = @(@('t', 'type: movies / series / all'), @('g', 'genre'), @('o', 'sort'), @('f', 'favorite on / off'), @('tab  1 2', 'explore / favorites'), @('enter', 'title page: episodes and streams'), @('l', 'stream language filter (on the streams list)'), @('esc  q', 'back / quit'))
-        notes = @('only streams cached on Real-Debrid open instantly (yellow lightning)', 'progress is saved locally: reopening resumes where you stopped') }
+        notes = @('only streams cached on Real-Debrid / TorBox open instantly (yellow lightning)', 'progress is saved locally: reopening resumes where you stopped') }
     @{ g = 'media'; c = 'view'; s = 'show a file nicely: markdown, pdf, images, code'; ins = 'view '
         use = @(@('view <file.md>', 'markdown with colors; mermaid diagrams drawn as images'), @('view <file.pdf>', 'pages as images: arrows / pgup pgdn / home end, q quits'), @('view <image>', 'shows the image'), @('view <other>', 'code / text with colors and line numbers (bat)'))
         notes = @('from WSL, a pdf opens in a new tab (it needs the keyboard)') }
+    @{ g = 'media'; c = 'spotify'; s = 'Spotify in the terminal: search, playlists, play / pause'; ins = 'spotify'
+        use = @(@('spotify', 'opens the player'))
+        kb = @(@('/', 'search'), @('space', 'play / pause'), @('n  p', 'next / previous'), @('?', 'all shortcuts'), @('q', 'quit'))
+        notes = @('needs Spotify Premium; the first time the browser opens for you to sign in', 'the header''s "now playing" widget shows it too') }
     # ---- pcs ----
     @{ g = 'pcs'; c = 'ssh'; s = 'open a shell on another of your PCs'; ins = 'ssh '
         use = @(@('ssh <pc>', 'the name you gave it in setup > Tailscale (its Tailscale name works too)'), @('ssh <anything else>', 'the normal ssh'))
@@ -26,14 +30,27 @@ $KvnHelp = @(
         use = @(@('send <path>', 'to the other PC''s Downloads'), @('send <path> <dest>', 'to <dest> on the other PC')) }
     @{ g = 'pcs'; c = 'rls'; s = 'list a folder of the other PC (like ls)'; ins = 'rls '
         use = @(@('rls', 'the other PC''s home'), @('rls <folder>', 'that folder (tab completes)'), @('rls -a', 'include hidden files')) }
-    @{ g = 'pcs'; c = 'super'; s = 'SuperTerminal itself: upgrade, sync your PCs, status'; ins = 'super '
-        use = @(@('super upgrade', 'the latest version from GitHub, on this PC'), @('super sync', 'this PC''s version to your other PCs (they apply it)'), @('super status', 'this PC and the others compared with GitHub; changes nothing'))
+    @{ g = 'pcs'; c = 'super'; s = 'SuperTerminal itself: upgrade, sync your PCs, status, doctor'; ins = 'super '
+        use = @(@('super upgrade', 'the latest version from GitHub, on this PC'), @('super upgrade --all', 'and then every program (topgrade: winget, pip...)'), @('super sync', 'this PC''s version to your other PCs (they apply it)'), @('super status', 'this PC and the others compared with GitHub; changes nothing'), @('super doctor', 'what is missing or wrong on this PC, and how to fix it'))
         notes = @('only when you run it: nothing updates by itself', 'the other PCs: the ones named in setup > Tailscale and online; they get the version over ssh (no GitHub needed there)', 'yours stays: cookies, accounts, PC names, the header logo, and any file you changed on this PC (the new one is saved next to it as .new)') }
     @{ g = 'pcs'; c = 'wake'; s = 'wake another PC (Wake-on-LAN)'; ins = 'wake'
         use = @(@('wake', 'wakes your other PC and waits until it answers'), @('wake <pc>', 'that one'))
         notes = @('only on the same network as that PC', 'needs its MAC: "mac" for it in ~\.config\superterminal\pcs.json') }
     @{ g = 'pcs'; c = 'suspend'; s = 'put another PC (or this one) to sleep'; ins = 'suspend'
         use = @(@('suspend', 'suspends your other PC'), @('suspend <pc>', 'that one; this PC''s own name suspends this PC')) }
+    @{ g = 'pcs'; c = 'cloud'; s = 'Google Drive, OneDrive, Dropbox... (rclone)'; ins = 'cloud '
+        use = @(@('cloud', 'your clouds and the space used (the first time: set one up)'), @('cloud ls [folder]', 'list a folder'), @('cloud up <file...>', 'send to the SuperTerminal folder in the cloud'), @('cloud get <file>', 'bring it to Downloads'), @('cloud add', 'one more cloud'))
+        notes = @('the first cloud is the default; another one: cloud ls <name>:folder') }
+    @{ g = 'pcs'; c = 'share'; s = 'send a file to ANYONE with a code (croc)'; ins = 'share '
+        use = @(@('share <file or folder...>', 'shows a code'), @('receive <code>', 'on the other side: saves to Downloads'))
+        notes = @('works between any two computers with croc, no Tailscale needed; your own PCs: get / send') }
+    @{ g = 'pcs'; c = 'pcping'; s = 'ping your PCs and the internet, with a live graph'; ins = 'pcping'
+        use = @(@('pcping', 'your other PCs (Tailscale) and 1.1.1.1'), @('pcping <host...>', 'those')) }
+    @{ g = 'pcs'; c = 'speedtest'; s = 'internet speed (Ookla)'; ins = 'speedtest'
+        use = @(@('speedtest', 'download, upload, ping'), @('speedtest -L', 'nearby servers'), @('speedtest -s <id>', 'that server')) }
+    @{ g = 'pcs'; c = 'trip'; s = 'where a connection gets slow (traceroute, live)'; ins = 'trip '
+        use = @(@('trip <host>', 'e.g. trip google.com'))
+        notes = @('needs admin: it goes through sudo (setup sudo)') }
     # ---- files ----
     @{ g = 'files'; c = 'ls'; s = 'list a folder (icons, sizes, dates)'; ins = 'ls '
         use = @(@('ls', 'this folder'), @('ls <folder>', 'another folder'), @('ls -a', 'include hidden files'), @('la', 'everything with eza'), @('ll', 'details with eza (+ git status)'), @('lt', 'tree, 2 levels')) }
@@ -62,6 +79,8 @@ $KvnHelp = @(
         use = @(@('cpwd', 'copies the path to the clipboard (also over ssh)')) }
     @{ g = 'files'; c = 'dust'; s = 'what takes space on the disk'; ins = 'dust '
         use = @(@('dust', 'this folder'), @('dust <folder>', 'another one'), @('dust -d 1', 'only one level')) }
+    @{ g = 'files'; c = 'ouch'; s = 'compress / extract any format (zip, 7z, rar, tar.gz, zst...)'; ins = 'ouch '
+        use = @(@('ouch d <archive>', 'extract'), @('ouch c <files...> <out.tar.gz>', 'compress (the format comes from the name)'), @('ouch l <archive>', 'list what is inside')) }
     # ---- apps ----
     @{ g = 'apps'; c = 'app'; s = 'open your apps by name'; ins = 'app '
         use = @(@('app', 'pick from a list'), @('app <name>', 'open it (tab completes)'), @('app add', 'pick a program in a window'), @('app add <name> <path>', 'add with a path or shell:AppsFolder\<id>'), @('app ren <a> <b>', 'rename'), @('app rm <name>', 'remove'), @('app list', 'list all'))
@@ -81,7 +100,7 @@ $KvnHelp = @(
     @{ g = 'shell'; c = 'setup'; s = 'set up accounts and choices: font, Tailscale, YouTube, Stremio, logo, sudo'; ins = 'setup'
         use = @(@('setup', 'all the steps and how each one stands'), @('setup <step>', 'straight to one: font, tailscale, youtube, stremio, logo, sudo'))
         kb = @(@('up / down  1-6', 'choose a step'), @('enter', 'set it up (or again)'), @('q  esc', 'done'))
-        notes = @('opens by itself the first time the terminal starts', 'stremio: sign in, AIOMetadata, and streams with or without Real-Debrid', 'logo: block letters from text, or draw / paste your own in the editor') }
+        notes = @('opens by itself the first time the terminal starts', 'stremio: sign in, AIOMetadata, and streams with Real-Debrid, TorBox or no debrid', 'logo: block letters from text, or draw / paste your own in the editor') }
     @{ g = 'shell'; c = 'ff'; s = 'clear the shell / redraw the header'; ins = 'ff'
         use = @(@('ff', 'clear the shell (clear and ctrl+l do the same)'), @('reset', 'like on Linux: fixes a terminal left broken by an app (colours, cursor, mouse) and clears'), @('ffw', 'header live (every 2 s) on / off'))
         notes = @('the header lives in the top pane and redraws itself (live is the default)') }
@@ -106,6 +125,18 @@ $KvnHelp = @(
         notes = @('e.g. Get-Content $HOME\.config\apps.json | jq .') }
     @{ g = 'shell'; c = 'tldr'; s = 'short examples of a command'; ins = 'tldr '
         use = @(@('tldr <command>', 'e.g. tldr tar, tldr git-rebase')) }
+    @{ g = 'shell'; c = 'calc'; s = 'calculator with units (numbat)'; ins = 'calc '
+        use = @(@('calc 1920 * 1080', 'plain maths'), @('calc ''5 GB / (20 MB/s) to min''', 'how long a download takes'), @('calc ''100 km/h to m/s''', 'units'), @('calc', 'interactive (ctrl+d leaves)'))
+        notes = @('with ( ) put it in quotes: PowerShell would run what is inside the brackets') }
+    @{ g = 'shell'; c = 'xh'; s = 'HTTP requests, readable (APIs)'; ins = 'xh '
+        use = @(@('xh httpbin.org/get', 'GET'), @('xh post <url> name=x', 'POST with JSON'), @('xh -d <url>', 'download a file')) }
+    @{ g = 'shell'; c = 'pastel'; s = 'colours: see, mix, pick'; ins = 'pastel '
+        use = @(@('pastel color ff8800', 'shows it, with rgb / hsl'), @('pastel mix ff0080 00c6ff', 'the colour in between'), @('pastel random', 'a few random ones'))
+        notes = @('the hex codes work in setup prompt (c) and setup logo (o)') }
+    @{ g = 'shell'; c = 'gh'; s = 'GitHub: repos, pull requests, issues'; ins = 'gh '
+        use = @(@('gh auth login', 'sign in (once)'), @('gh pr list  /  gh pr create', 'pull requests'), @('gh repo clone <user/repo>', 'clone')) }
+    @{ g = 'shell'; c = 'hyperfine'; s = 'how long a command takes (several runs)'; ins = 'hyperfine '
+        use = @(@('hyperfine ''<command>''', 'average, min and max'), @('hyperfine ''<a>'' ''<b>''', 'which is faster')) }
     @{ g = 'shell'; c = 'wsl'; s = 'Linux (zsh)'; ins = 'wsl'
         use = @(@('wsl', 'opens zsh in this folder'), @('exit', 'back to Windows'))
         notes = @('inside: ~ws ~desk ~dl ~win go to Windows folders; cd ''C:\...'' works; get / send / rls / yt / st / view too') }

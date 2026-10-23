@@ -68,7 +68,18 @@ $Apps = @(
     # (o ffmpeg vem com o yt-dlp: o winget instala o yt-dlp.FFmpeg como dependencia; um 2.o, o Gyan.FFmpeg, chocava
     # com o comando "ffmpeg" que ja existia e era reinstalado a cada vez)
     @('charmbracelet.glow', 'markdown'), @('yt-dlp.yt-dlp', 'yt (and ffmpeg)'), @('shinchiro.mpv', 'the video player'),
-    @('hpjansson.Chafa', 'images in the terminal'), @('oschwartz10612.Poppler', 'view: pdf pages'), @('jqlang.jq', 'JSON'), @('bootandy.dust', 'disk usage'), @('tldr-pages.tlrc', 'tldr')
+    @('hpjansson.Chafa', 'images in the terminal'), @('oschwartz10612.Poppler', 'view: pdf pages'), @('jqlang.jq', 'JSON'), @('bootandy.dust', 'disk usage'), @('tldr-pages.tlrc', 'tldr'),
+    # extras: super upgrade --all, spotify, cloud, pcping, speedtest, trip, share / receive, xh, pastel, gh, hyperfine
+    @('topgrade-rs.topgrade', 'update every program'), @('aome510.spotify-player', 'spotify'), @('Rclone.Rclone', 'cloud: Google Drive, OneDrive...'),
+    @('orf.gping', 'pcping: ping with a graph'), @('Ookla.Speedtest.CLI', 'speedtest'), @('FujiApple.Trippy', 'trip: traceroute'),
+    @('schollz.croc', 'share / receive files with anyone'), @('ducaale.xh', 'HTTP requests'), @('sharkdp.pastel', 'colours'),
+    @('GitHub.cli', 'gh: GitHub'), @('sharkdp.hyperfine', 'time commands')
+)
+# (sem pacote no winget: a versao oficial do GitHub, para ~\.local\bin, que o perfil poe no PATH)
+#   (repo, ficheiro da versao Windows, exe, para que serve)
+$GhApps = @(
+    @('sharkdp/numbat', 'x86_64-pc-windows-msvc\.zip$', 'numbat.exe', 'calc: calculator with units'),
+    @('ouch-org/ouch', 'ouch-x86_64-pc-windows-msvc\.zip$', 'ouch.exe', 'ouch: any archive format')
 )
 # winget: "Failed to extract the contents of the archive" (-1978335140) acontece em alguns Windows com o metodo de
 # extracao por omissao (o do Explorador); a solucao documentada e o "tar". So durante a instalacao: no fim volta tudo
@@ -121,6 +132,26 @@ if (-not $SkipApps) {
         if ($LASTEXITCODE -eq 0) { Good $a[0] } else { Warn "$($a[0]) did not install (code $LASTEXITCODE): the rest goes on; run this again later" }
     }
     Restore-WingetSettings
+    $bin = Join-Path $Local 'bin'
+    foreach ($g in $GhApps) {
+        if (Test-Path (Join-Path $bin $g[2])) { Good "$($g[2])  (already installed)"; continue }
+        Info "installing $($g[2])  - $($g[3])  (from github.com/$($g[0]))"
+        $zip = $null; $tmp = $null
+        try {
+            $rel = Invoke-RestMethod "https://api.github.com/repos/$($g[0])/releases/latest" -UseBasicParsing -Headers @{ 'User-Agent' = 'SuperTerminal' }
+            $asset = $rel.assets | Where-Object { $_.name -match $g[1] } | Select-Object -First 1
+            if (-not $asset) { throw "no Windows build in the latest release" }
+            $zip = Join-Path $env:TEMP "$Stamp-$($asset.name)"; $tmp = "$zip.d"
+            Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing
+            Expand-Archive $zip $tmp -Force
+            $exe = Get-ChildItem $tmp -Recurse -Filter $g[2] | Select-Object -First 1
+            if (-not $exe) { throw "$($g[2]) is not in $($asset.name)" }
+            New-Item -ItemType Directory $bin -Force | Out-Null
+            Copy-Item $exe.FullName $bin -Force
+            Good $g[2]
+        } catch { Warn "$($g[2]): $($_.Exception.Message)" }
+        finally { if ($zip) { Remove-Item $zip, $tmp -Recurse -Force -ErrorAction SilentlyContinue } }
+    }
     # (o que o winget instalou so entra no PATH dos processos novos: este continua com o antigo)
     $env:PATH = [Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'User')
 }

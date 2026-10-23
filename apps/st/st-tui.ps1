@@ -765,7 +765,7 @@ function ConvertTo-Stream($s, [string]$addon) {
     $q, $ql = if ($t -match '2160p|\b4k\b|uhd') { 4, '4K' } elseif ($t -match '1440p') { 3.5, '1440p' } elseif ($t -match '1080p') { 3, '1080p' } elseif ($t -match '720p') { 2, '720p' } elseif ($t -match '480p|360p|\bsd\b') { 1, 'SD' } else { 0, '?' }
     $size = 0; $sz = ''
     if ($t -match '(\d+(?:[.,]\d+)?)\s?(GB|GiB|MB|MiB)') { $size = [double]($Matches[1] -replace ',', '.') * $(if ($Matches[2] -like 'G*') { 1024 } else { 1 }); $sz = "$($Matches[1]) $($Matches[2] -replace 'i', '')" }
-    $cached = ($t -match '⚡|\[RD\+\]|🌩|instant|(?<!un|not )cached') -and $t -notmatch 'download|⬇|uncached|not cached'
+    $cached = ($t -match '⚡|\[(RD|TB)\+\]|🌩|instant|(?<!un|not )cached') -and $t -notmatch 'download|⬇|uncached|not cached'
     $file = if ($s.behaviorHints.filename) { $s.behaviorHints.filename } else {
         $lines = @(("$($s.title)`n$($s.description)" -split "`n") | ForEach-Object { ($_ -replace '^[^\w\[\(]+', '').Trim() } | Where-Object { $_ })
         if ($lines) { $lines[0] } else { ($s.name -replace '\s+', ' ') }
@@ -779,10 +779,12 @@ function ConvertTo-Stream($s, [string]$addon) {
     }
     foreach ($w in $WordLang.Keys) { if ($t -match "(?i)\b($w)\b") { [void]$langs.Add($WordLang[$w]) } }
     if ($torrent) { $cached = $false }
-    [pscustomobject]@{ torrent = [bool]$torrent; langs = @($langs); q = $q; ql = $ql; size = $size; sz = $sz; cached = $cached; file = ($file -replace '\s+', ' '); tags = ($tags | Select-Object -Unique) -join ' '; addon = ($addon -replace '\s*\|\s*RD$', ''); url = $s.url; subs = @($s.subtitles) }
+    [pscustomobject]@{ torrent = [bool]$torrent; langs = @($langs); q = $q; ql = $ql; size = $size; sz = $sz; cached = $cached; file = ($file -replace '\s+', ' '); tags = ($tags | Select-Object -Unique) -join ' '; addon = ($addon -replace '\s*\|\s*(RD|TB)$', ''); url = $s.url; subs = @($s.subtitles) }
 }
 $StServer = 'http://127.0.0.1:11470'
-$StFree = "$(Get-Content "$HOME\.config\superterminal\stremio-mode.txt" -ErrorAction Ignore)".Trim() -eq 'free'   # (setup > Stremio: sem debrid)
+$StMode = "$(Get-Content "$HOME\.config\superterminal\stremio-mode.txt" -TotalCount 1 -ErrorAction Ignore)".Trim()   # (setup > Stremio: rd / torbox / free)
+$StFree = $StMode -eq 'free'   # (sem debrid)
+$StDebrid = if ($StMode -eq 'torbox') { 'TorBox' } else { 'Real-Debrid' }
 function Test-StServer { try { $null = Invoke-WebRequest "$StServer/settings" -TimeoutSec 1 -UseBasicParsing; $true } catch { $false } }
 function Start-StServer {
     # ja a correr (Stremio Service ou a app do Stremio aberta)? senao arranca o Stremio Service e espera ate 15 s
@@ -793,10 +795,10 @@ function Start-StServer {
     $sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.ElapsedMilliseconds -lt 15000) { if (Test-StServer) { return $true }; Start-Sleep -Milliseconds 300 }
     $false
 }
-$Resolved = [hashtable]::Synchronized(@{})   # link do addon -> link final no servidor do Real-Debrid
+$Resolved = [hashtable]::Synchronized(@{})   # link do addon -> link final no servidor do debrid (Real-Debrid / TorBox)
 function Start-Resolve($st) {
-    # o link do addon é um "resolve" que pede ao RD o link de download (~1,8 s): feito antes do Enter, o mpv arranca logo.
-    # só para streams em cache (num que não está, isto poria o RD a descarregar o torrent)
+    # o link do addon é um "resolve" que pede ao debrid o link de download (~1,8 s): feito antes do Enter, o mpv arranca logo.
+    # só para streams em cache (num que não está, isto poria o debrid a descarregar o torrent)
     if (-not $st -or -not $st.cached -or $Resolved.ContainsKey($st.url)) { return }
     $Resolved[$st.url] = $null
     $null = Start-ThreadJob -Name st -ThrottleLimit 100 -ArgumentList $st.url, $Resolved -ScriptBlock {
@@ -857,7 +859,7 @@ function Show-Streams($meta, [string]$vid, [string]$label) {
             $o += "$e[$yy;1H$e[2K$e[$yy;4H$line"
         }
         if (-not $list.Count -and -not $wait) { $o += "$e[6;4H$e[90mno streams found$(if ($filter) { ' with this filter' } elseif ($StFree) { ' (without debrid: setup stremio > add Torrentio for more)' })$e[0m" }
-        $o += "$e[$H;4H$e[2K$e[90m$(if ($StFree) { "$([char]0xf0ec) torrent (plays through Stremio Service)" } else { "$([char]0xf0e7) cached on Real-Debrid (instant)   $([char]0xf019) not cached" })$(if (-not $env:WEZTERM_PANE) { "   ·   ? shortcuts" })$e[0m$e[?2026l"; Set-Hints 'enter|play;l|language;?|all shortcuts;esc|back'; $o += ""
+        $o += "$e[$H;4H$e[2K$e[90m$(if ($StFree) { "$([char]0xf0ec) torrent (plays through Stremio Service)" } else { "$([char]0xf0e7) cached on $StDebrid (instant)   $([char]0xf019) not cached" })$(if (-not $env:WEZTERM_PANE) { "   ·   ? shortcuts" })$e[0m$e[?2026l"; Set-Hints 'enter|play;l|language;?|all shortcuts;esc|back'; $o += ""
         [Console]::Write($o)
         # espera por tecla (e vai juntando os addons que respondem)
         # o primeiro da lista e o escolhido (parado ~0,4 s) ficam já resolvidos para o Enter abrir logo
@@ -992,7 +994,7 @@ function Start-Player($meta, [string]$vid, [string]$label, $st, $subs, [switch]$
     if ($Trailer) { $o += "$e[$r;${tx}H$e[48;2;$($StTheme.sel);97m trailer $e[0m  $e[90m$(Fit $st.file ($tw - 12))$e[0m"; $r += 2 }
     else {
         $qc = switch ($st.ql) { '4K' { '48;2;198;120;221;30' } '1440p' { '48;2;152;94;172;97' } '1080p' { '48;2;97;175;239;38;2;40;44;52' } default { '48;2;62;68;81;37' } }
-        $o += "$e[$r;${tx}H$e[${qc}m $($st.ql) $e[0m  " + $(if ($st.torrent) { "$e[36m$([char]0xf0ec) torrent  " } elseif ($st.cached) { "$e[33m$([char]0xf0e7) cached  " } else { "$e[90m$([char]0xf019) preparing on Real-Debrid  " }) + "$e[36m$($st.sz)$e[90m   $($st.addon)$e[0m"; $r++
+        $o += "$e[$r;${tx}H$e[${qc}m $($st.ql) $e[0m  " + $(if ($st.torrent) { "$e[36m$([char]0xf0ec) torrent  " } elseif ($st.cached) { "$e[33m$([char]0xf0e7) cached  " } else { "$e[90m$([char]0xf019) preparing on $StDebrid  " }) + "$e[36m$($st.sz)$e[90m   $($st.addon)$e[0m"; $r++
         foreach ($ln in @(Wrap-Lines $st.file $tw 2)) { $o += "$e[$r;${tx}H$e[90m$ln$e[0m"; $r++ }
         if ($st.tags) { $o += "$e[$r;${tx}H$e[90m$($st.tags)$e[0m"; $r++ }
         $r++
@@ -1068,7 +1070,7 @@ function Start-Player($meta, [string]$vid, [string]$label, $st, $subs, [switch]$
     if ($Trailer) { return }
     if ($null -ne $t -and $d) { . $keep }
     elseif ($mp.ExitCode -ne 0 -and -not $cancelled) {
-        $msg = if ($st.torrent) { 'this torrent has no peers right now (or is still starting) — try another one' } elseif (-not $st.cached) { "this stream isn't on Real-Debrid yet (it just started downloading) — pick one with $([char]0xf0e7)" } else { 'mpv could not open this stream — try another' }
+        $msg = if ($st.torrent) { 'this torrent has no peers right now (or is still starting) — try another one' } elseif (-not $st.cached) { "this stream isn't on $StDebrid yet (it just started downloading) — pick one with $([char]0xf0e7)" } else { 'mpv could not open this stream — try another' }
         [Console]::Write("$e[$stateRow;${tx}H$e[0K$e[31m$msg$e[0m$e[$($stateRow + 1);${tx}H$e[90mpress any key to go back$e[0m"); [void](Read-Key)
     }
 }

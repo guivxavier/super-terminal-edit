@@ -1,0 +1,14 @@
+# a cada push / pull request: tests\run.ps1 (sintaxe de todos os .ps1, ASCII do instalador, PSScriptAnalyzer)
+name: checks
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+      - name: tests\run.ps1
+        shell: pwsh
+        run: ./tests/run.ps1

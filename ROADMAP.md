@@ -17,13 +17,14 @@ Goal: a colleague runs one command on a clean Windows and gets the same terminal
 - [ ] **Config per person**, outside the repo, in `~\.config\superterminal\`: the PCs are done (`pcs.json`: name, Tailscale name, user, ssh shell, IP, MAC for wake, written by setup > Tailscale); still to do: name, theme, which modules are on (yt, st, pin...).
 - [ ] **Split the profile** (1380 lines in one file) into modules: `prompt`, `nav` (cd/ls/menu), `completion`, `header` (ff/pin), `git`, `pcs` (ssh/get/send/wake), `linux`, `apps`. A slow or broken module can be turned off by itself.
 - [ ] **Fewer machine-specific assumptions**: Windows Terminal Store vs portable, Windows 10 vs 11, no WSL, no Tailscale, no second PC: each must work or switch off cleanly.
+- [x] **`super doctor`**: what is missing or wrong on this PC (programs, WezTerm, font, config files, Tailscale, ssh, version, profile load time), with the command that fixes each; changes nothing.
 - [x] **Updates**: `super upgrade` = latest version from GitHub, applied with `install.ps1 -SkipApps` (files changed on this PC are kept, the new one saved as `.new`); `super sync` = this version over ssh to the other named PCs, which apply it; `super status` compares without changing anything. Only by hand: no automatic pulls (a bad commit would otherwise run on every PC by itself).
 - [x] **First-run setup** (Kev's request): `setup` (`terminal/setup/setup.ps1`), a guided screen that sets up whatever needs an account or a choice before the terminal is 100%. Opens by itself the first time; each step can be redone later (`setup <step>`):
   Every step is a guided page: numbered steps, the current one with its shortcut keys, and each step ticks itself off when the setup detects it.
   - [x] font: pick a .zip / .ttf (file dialog or path) or download CaskaydiaMono; WezTerm reads `~\.config\superterminal\font.txt`;
   - [x] Tailscale: install, sign in, other PCs, SSH server on this PC, **names for ssh** (`pcs.json` + `~\.ssh\config`, existing `Host` entries are picked up, the Tailscale name works too), copy the key (no password);
   - [x] YouTube for `yt`: shortcuts for the extension, its private-window setting and a private window; the exported cookies are picked up from Downloads and checked;
-  - [x] Stremio for `st`: choose with / without Real-Debrid first, then account, Real-Debrid, Stremio Account Bootstrapper (preset standard / http-only), AIOMetadata, each checked on the account;
+  - [x] Stremio for `st`: choose Real-Debrid / TorBox / no debrid first, then account, the debrid service, Stremio Account Bootstrapper (preset standard / http-only), AIOMetadata, each checked on the account;
   - [x] header logo: drawing editor (mouse paints / erases, block letters from text, palettes); the header's columns move right for a wider logo;
   - [x] sudo (Windows 11 setting, inline / gsudo on Windows 10);
   - [x] WSL (optional): install WSL + Ubuntu, create the Linux user, then zsh + tools and guarded lines in `.bashrc` / `.zshrc` (outside SuperTerminal WSL stays as it was).
@@ -46,5 +47,5 @@ Known rough edges, from use:
 - [ ] **Folder menu (Ctrl+Space)**: hand-drawn with absolute ANSI positioning; check icon widths and resizes.
 - [ ] **WSL parity**: the zsh side repeats PowerShell logic (prompt, menu, fetch). Decide what really has to be the same.
 - [ ] **yt / st**: big scripts (thumbnails in sixel, mpv IPC); add a smoke test for each.
-- [ ] **Tests**: turn `tests/` into a `tests/run.ps1` that runs the parser check plus the key scenarios (Tab, Ctrl+Space, cd, rm -rf, repo) and fails loudly.
+- [ ] **Tests**: `tests/run.ps1` (syntax of every .ps1, ASCII installer, PSScriptAnalyzer errors) runs on every push (`.github/workflows/checks.yml`). Still to do: the key scenarios (Tab, Ctrl+Space, cd, rm -rf, repo).
 - [ ] Everything a Claude process installs under `%APPDATA%` is virtualized (MSIX): the installer must not depend on that.
