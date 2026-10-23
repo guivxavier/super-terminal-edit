@@ -17,8 +17,9 @@ $KvnHelp = @(
         notes = @('from WSL, a pdf opens in a new tab (it needs the keyboard)') }
     @{ g = 'media'; c = 'spotify'; s = 'Spotify in the terminal: search, playlists, play / pause'; ins = 'spotify'
         use = @(@('spotify', 'opens the player'))
-        kb = @(@('/', 'search'), @('space', 'play / pause'), @('n  p', 'next / previous'), @('?', 'all shortcuts'), @('q', 'quit'))
-        notes = @('needs Spotify Premium; the first time the browser opens for you to sign in', 'the header''s "now playing" widget shows it too') }
+        kb = @(@('g s', 'search Spotify (g, then s)'), @('up down  enter', 'move / play the selected one'), @('u p', 'your playlists'), @('g y', 'liked songs'), @('g l', 'your library'),
+            @('backspace', 'previous page'), @('tab', 'the other panel'), @('space', 'play / pause'), @('n  p', 'next / previous'), @('+  -', 'volume'), @('/', 'filter the list on screen'), @('?', 'all shortcuts'), @('q', 'quit'))
+        notes = @('keyboard only: no buttons (the mouse only seeks on the progress bar)', 'two-key shortcuts: press the first, let go, then the second', 'needs Spotify Premium; the first time the browser opens for you to sign in', 'the header''s "now playing" widget shows it too') }
     # ---- pcs ----
     @{ g = 'pcs'; c = 'ssh'; s = 'open a shell on another of your PCs'; ins = 'ssh '
         use = @(@('ssh <pc>', 'the name you gave it in setup > Tailscale (its Tailscale name works too)'), @('ssh <anything else>', 'the normal ssh'))
