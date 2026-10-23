@@ -1582,7 +1582,16 @@ function monitor {Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile 
 
 # ---- extras (o instalador poe-os; o super doctor diz quais faltam) ----
 # spotify: o Spotify no terminal (spotify_player; precisa de Premium; a 1.a vez abre o browser para entrar)
-function spotify { if (Open-InTab 'spotify' (@('spotify_player') + $args)) { return }; Clear-FfRegion; $a = $args; Invoke-Zoomed { spotify_player @a } }
+# (no WezTerm as teclas principais ficam na barra de baixo enquanto esta aberto: user var "hints", como no yt / st)
+function Set-PaneHints([string]$s) { if ($env:WEZTERM_PANE) { [Console]::Write("$([char]27)]1337;SetUserVar=hints=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))$([char]7)") } }
+function spotify {
+    if (Open-InTab 'spotify' (@('spotify_player') + $args)) { return }
+    Clear-FfRegion; $a = $args
+    Invoke-Zoomed {
+        Set-PaneHints 'g s|search;enter|play;n p|next / prev;space|pause;l|lyrics;D|device;?|keys;q|quit'
+        try { spotify_player @a } finally { Set-PaneHints '' }
+    }
+}
 # calc: calculadora com unidades (numbat): "calc 1920 * 1080", "calc '5 GB / (20 MB/s) to min'" (com parenteses, entre
 # aspas: senao o PowerShell corre o que esta dentro); sem nada, interativa
 function calc { if ($args) { numbat -e ($args -join ' ') } else { numbat } }
