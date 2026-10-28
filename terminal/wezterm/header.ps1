@@ -35,7 +35,8 @@ while ($true) {
         $n++; Set-UserVar rows "$($rows):$n"
         $tick.Restart()
     }
-    elseif ($tick.ElapsedMilliseconds -ge 2000 -and -not (Test-Path "$env:TEMP\superterminal-header-static")) {   # (ffw desliga)
+    # (ffw desliga; escondido pelo Ctrl+Alt+T / Ctrl+W ou com um programa ampliado por cima: nao gasta CPU a toa)
+    elseif ($tick.ElapsedMilliseconds -ge 2000 -and -not (Test-Path "$env:TEMP\superterminal-header-static") -and -not (Test-Path "$env:TEMP\superterminal-hidden") -and -not (Test-Path "$env:TEMP\superterminal-zoomed")) {
         # ao vivo: o fastfetch volta a correr e escreve por cima (sem limpar -> nao pisca); ESC[K apaga restos
         Update-TsCache 5; if (Get-Command Update-Widgets -ErrorAction Ignore) { Update-Widgets }
         $enc = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); Push-Location $HOME

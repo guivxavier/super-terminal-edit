@@ -616,8 +616,10 @@ function Invoke-Zoomed([scriptblock]$sb) {
     if ($env:WEZTERM_PANE -and $env:WEZTERM_EXECUTABLE) {
         $wz = Join-Path (Split-Path $env:WEZTERM_EXECUTABLE) 'wezterm.exe'
         & $wz cli zoom-pane --zoom 2>$null; Start-Sleep -Milliseconds 100
+        # (superterminal-zoomed: o cabecalho fica por baixo, nao se ve; para de correr o fastfetch a cada 2 s)
+        [IO.File]::WriteAllText("$env:TEMP\superterminal-zoomed", '')
         # (ao sair do zoom o cabecalho e redesenhado ja: as vezes o WezTerm nao o repintava e ficava em branco)
-        try { & $sb } finally { & $wz cli zoom-pane --unzoom 2>$null; New-Item "$env:TEMP\superterminal-header-redraw" -Force | Out-Null }
+        try { & $sb } finally { & $wz cli zoom-pane --unzoom 2>$null; Remove-Item "$env:TEMP\superterminal-zoomed" -ErrorAction Ignore; New-Item "$env:TEMP\superterminal-header-redraw" -Force | Out-Null }
         return
     }
     $zoom = $global:FfBarPid -and (Get-Process -Id $global:FfBarPid -ErrorAction SilentlyContinue)
@@ -1584,7 +1586,22 @@ function monitor {Clear-FfRegion; Invoke-Zoomed { & $PwshExe -NoLogo -NoProfile 
 # spotify: o Spotify no terminal (spotify_player; precisa de Premium; a 1.a vez abre o browser para entrar)
 # (no WezTerm as teclas principais ficam na barra de baixo enquanto esta aberto: user var "hints", como no yt / st)
 function Set-PaneHints([string]$s) { if ($env:WEZTERM_PANE) { [Console]::Write("$([char]27)]1337;SetUserVar=hints=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($s)))$([char]7)") } }
+# (contas em que o leitor do spotify_player nao toca - "audio key error", librespot#1649: com enable_streaming = "Never"
+# no app.toml ele so comanda a app do Spotify; abre-a aqui, minimizada, se nao estiver aberta)
+function Start-SpotifyApp {
+    $toml = "$HOME\.config\spotify-player\app.toml"
+    if (-not ((Test-Path $toml) -and (Get-Content $toml -Raw) -match '(?m)^\s*enable_streaming\s*=\s*"Never"')) { return }
+    if (Get-Process Spotify -ErrorAction Ignore) { return }
+    Start-Process 'spotify:' -ErrorAction Ignore
+    if (-not ('StWin' -as [type])) { Add-Type -Name StWin -Namespace '' -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);' }
+    for ($i = 0; $i -lt 40; $i++) {   # (ate ~8 s: minimiza a janela mal aparece; continua a tocar)
+        $w = Get-Process Spotify -ErrorAction Ignore | Where-Object MainWindowHandle -ne 0 | Select-Object -First 1
+        if ($w) { $null = [StWin]::ShowWindow($w.MainWindowHandle, 6); break }   # SW_MINIMIZE
+        Start-Sleep -Milliseconds 200
+    }
+}
 function spotify {
+    Start-SpotifyApp
     if (Open-InTab 'spotify' (@('spotify_player') + $args)) { return }
     Clear-FfRegion; $a = $args
     Invoke-Zoomed {

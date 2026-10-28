@@ -30,6 +30,10 @@ static class Agent {
     [DllImport("user32.dll")] static extern IntPtr GetShellWindow();
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int idx);
     [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int val, int size);
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int l, t, r, b; }
     delegate bool EnumProc(IntPtr h, IntPtr l);
     [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr hwnd; public uint message; public IntPtr w, l; public uint time; public int x, y; }
 
@@ -37,15 +41,31 @@ static class Agent {
     const int SW_HIDE = 0, SW_SHOW = 5, SW_RESTORE = 9;
     static string Gui = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), @".local\wezterm\wezterm-gui.exe");
 
-    // janela do WezTerm (visivel ou escondida): classe "org.wezfurlong.wezterm"
+    // janela do WezTerm (visivel ou escondida): classe "org.wezfurlong.wezterm". (A janela escondida que o WezTerm usa
+    // para testar o OpenGL tem a mesma classe: se ela viesse 1.o, o atalho mostrava-a a ela e nao escondia o terminal)
     static IntPtr Find() {
-        IntPtr found = IntPtr.Zero; var sb = new StringBuilder(64);
+        IntPtr found = IntPtr.Zero; var sb = new StringBuilder(64); var t = new StringBuilder(64);
         EnumWindows((h, l) => {
             sb.Length = 0; GetClassName(h, sb, sb.Capacity);
-            if (sb.ToString() == "org.wezfurlong.wezterm") { found = h; return false; }
-            return true;
+            if (sb.ToString() != "org.wezfurlong.wezterm") return true;
+            t.Length = 0; GetWindowText(h, t, t.Capacity);
+            if (t.ToString().StartsWith("wezterm wgl")) return true;
+            found = h; return false;
         }, IntPtr.Zero);
         return found;
+    }
+
+    // ha alguma janela normal por cima dela? (sem isto o atalho so escondia com o terminal com o foco: com o foco na
+    // barra de tarefas, num widget ou no ambiente de trabalho, mostrava-o outra vez - ja estava a vista: nada mudava)
+    static bool Covered(IntPtr h) {
+        RECT r; GetWindowRect(h, out r);
+        for (IntPtr w = GetWindow(h, 3); w != IntPtr.Zero; w = GetWindow(w, 3)) {   // GW_HWNDPREV: as de cima
+            if (!IsWindowVisible(w) || IsIconic(w) || GetWindowTextLength(w) == 0 || (GetWindowLong(w, -20) & 0x80) != 0) continue;
+            int cloaked = 0; DwmGetWindowAttribute(w, 14, out cloaked, 4); if (cloaked != 0) continue;   // DWMWA_CLOAKED (apps UWP escondidas)
+            RECT o; GetWindowRect(w, out o);
+            if (o.l < r.r && o.r > r.l && o.t < r.b && o.b > r.t) return true;
+        }
+        return false;
     }
 
     // sem a animacao (fade) do Windows ao mostrar / esconder: o atalho fica instantaneo
@@ -67,19 +87,23 @@ static class Agent {
         return IntPtr.Zero;
     }
 
+    // escondido: o cabecalho (terminal/wezterm/header.ps1) para de correr o fastfetch a cada 2 s enquanto ninguem o ve
+    static string HiddenFlag = Path.Combine(Path.GetTempPath(), "superterminal-hidden");
+    static void Hidden(bool on) { try { if (on) File.WriteAllText(HiddenFlag, ""); else File.Delete(HiddenFlag); } catch { } }
+
     // esconde e entrega o foco: sem isto o Windows fica sem janela ativa e, nalguns PCs, o ecra so se redesenha
     // (e deixa de mostrar o terminal) depois de um clique
     static void Hide(IntPtr h) {
         IntPtr next = Below(h);
-        NoAnim(h); ShowWindow(h, SW_HIDE);
-        IntPtr t = (Prev != IntPtr.Zero && Prev != h && IsWindow(Prev) && IsWindowVisible(Prev) && !IsIconic(Prev)) ? Prev : next;
+        NoAnim(h); ShowWindow(h, SW_HIDE); Hidden(true);
+        IntPtr t =(Prev != IntPtr.Zero && Prev != h && IsWindow(Prev) && IsWindowVisible(Prev) && !IsIconic(Prev)) ? Prev : next;
         if (t == IntPtr.Zero) t = GetShellWindow();   // (nada aberto: o ambiente de trabalho)
         if (t != IntPtr.Zero) Focus(t);
     }
 
     static void Front(IntPtr h) {
         IntPtr f = GetForegroundWindow(); if (f != h && f != IntPtr.Zero) Prev = f;
-        NoAnim(h);
+        NoAnim(h); Hidden(false);
         ShowWindow(h, SW_SHOW);
         if (IsIconic(h)) ShowWindow(h, SW_RESTORE);
         Focus(h);
@@ -94,7 +118,7 @@ static class Agent {
         // aparece ja pronta, sem os saltos e redesenhos do arranque
         for (int i = 0; i < 200; i++) {
             var h = Find();
-            if (h != IntPtr.Zero && IsWindowVisible(h)) { NoAnim(h); ShowWindow(h, SW_HIDE); Thread.Sleep(1200); return h; }
+            if (h != IntPtr.Zero && IsWindowVisible(h)) { NoAnim(h); ShowWindow(h, SW_HIDE); Hidden(true); Thread.Sleep(1200); return h; }
             Thread.Sleep(25);
         }
         return IntPtr.Zero;
@@ -103,7 +127,7 @@ static class Agent {
     static void Toggle() {
         var h = Find();
         if (h == IntPtr.Zero) { h = Launch(); if (h != IntPtr.Zero) Front(h); return; }
-        if (IsWindowVisible(h) && !IsIconic(h) && GetForegroundWindow() == h) Hide(h);
+        if (IsWindowVisible(h) && !IsIconic(h) && (GetForegroundWindow() == h || !Covered(h))) Hide(h);
         else Front(h);
     }
 
